@@ -41,6 +41,7 @@ from arguments import (
 )
 
 import utils
+import elastic_search
 
 
 logger = logging.getLogger(__name__)
@@ -96,9 +97,15 @@ def main():
     )
 
     # True일 경우 : run passage retrieval
-    if data_args.eval_retrieval:
+    if data_args.eval_retrieval == 'sparse':
         datasets = run_sparse_retrieval(
             tokenizer.tokenize,
+            datasets,
+            training_args,
+            data_args,
+        )
+    elif data_args.eval_retrieval == 'elastic_sparse':
+        datasets = elastic_search.run_elastic_sparse_retrieval(
             datasets,
             training_args,
             data_args,
@@ -131,6 +138,7 @@ def run_sparse_retrieval(
         )
     else:
         df = retriever.retrieve(datasets["validation"], topk=data_args.top_k_retrieval)
+    
 
     # test data 에 대해선 정답이 없으므로 id question context 로만 데이터셋이 구성됩니다.
     if training_args.do_predict:
@@ -200,7 +208,7 @@ def run_mrc(
             stride=data_args.doc_stride,
             return_overflowing_tokens=True,
             return_offsets_mapping=True,
-            return_token_type_ids=utils.is_not_roberta(tokenizer), # roberta모델을 사용할 경우 False, bert를 사용할 경우 True로 표기해야합니다.
+            return_token_type_ids=False,#utils.is_not_roberta(tokenizer), # roberta모델을 사용할 경우 False, bert를 사용할 경우 True로 표기해야합니다.
             padding="max_length" if data_args.pad_to_max_length else False,
         )
 
@@ -297,7 +305,6 @@ def run_mrc(
     )
 
     logger.info("*** Evaluate ***")
-
     #### eval dataset & eval example - predictions.json 생성됨
     if training_args.do_predict:
         predictions = trainer.predict(

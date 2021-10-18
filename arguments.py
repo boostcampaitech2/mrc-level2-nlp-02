@@ -74,9 +74,9 @@ class DataTrainingArguments:
             "and end predictions are not conditioned on one another."
         },
     )
-    eval_retrieval: bool = field(
-        default=True,
-        metadata={"help": "Whether to run passage retrieval using sparse embedding."},
+    eval_retrieval: str = field(
+        default='sparse',
+        metadata={"help": "Choose which passage retrieval to be used.[sparse, elastic_sparse]."},
     )
     num_clusters: int = field(
         default=64, metadata={"help": "Define how many clusters to use for faiss."}

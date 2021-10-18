@@ -4,7 +4,7 @@ from tokenizers import Tokenizer
 def is_not_roberta(tokenizer: Tokenizer) -> bool:
     """해당 tokenizer가 roberta 토크나이저인지 판별한다.
 
-    Args:uti
+    Args:
         tokenizer (Tokenizer): 검사하고자 하는 tokenizer
 
     Returns:

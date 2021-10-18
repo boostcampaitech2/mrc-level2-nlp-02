@@ -1,0 +1,12 @@
+/0_practice
+/__pycache__
+/elastic_search
+/models
+/runs
+/outputs
+/wandb
+/assets
+/install
+readme.md
+_models.txt
+base_line_explorer.ipynb

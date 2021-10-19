@@ -47,7 +47,8 @@ logger = logging.getLogger(__name__)
 def main():
     # 가능한 arguments 들은 ./arguments.py 나 transformer package 안의 src/transformers/training_args.py 에서 확인 가능합니다.
     # --help flag 를 실행시켜서 확인할 수 도 있습니다.
-
+    
+    # dataclass를 통해 변수를 만들고 HfArgumentParser를 통해 합쳐서 사용
     parser = HfArgumentParser(
         (ModelArguments, DataTrainingArguments, TrainingArguments)
     )
@@ -117,22 +118,29 @@ def run_sparse_retrieval(
 ) -> DatasetDict:
 
     # Query에 맞는 Passage들을 Retrieval 합니다.
+    # retriever 설정
     retriever = SparseRetrieval(
         tokenize_fn=tokenize_fn, data_path=data_path, context_path=context_path
     )
-    retriever.get_sparse_embedding()
-
-    if data_args.use_faiss:
-        retriever.build_faiss(num_clusters=data_args.num_clusters)
-        df = retriever.retrieve_faiss(
-            datasets["validation"], topk=data_args.top_k_retrieval
-        )
-    else:
-        df = retriever.retrieve(datasets["validation"], topk=data_args.top_k_retrieval)
+    
+    # Passage Embedding 만들기
+    #retriever.get_sparse_embedding()
+    retriever.get_sparse_BM25()
+    df = retriever.retrieve_BM25(datasets['validation'], topk=data_args.top_k_retrieval)
+    
+    ## bm25 때문에 잠시 지움
+    # faiss사용하거나 안 하거나 해서, query를 받아, retrieval한 passage와 id, query 등을 받는다.
+    # if data_args.use_faiss:
+    #     retriever.build_faiss(num_clusters=data_args.num_clusters)
+    #     df = retriever.retrieve_faiss(
+    #         datasets["validation"], topk=data_args.top_k_retrieval
+    #     )
+    # else:
+    #     df = retriever.retrieve(datasets["validation"], topk=data_args.top_k_retrieval)
 
     # test data 에 대해선 정답이 없으므로 id question context 로만 데이터셋이 구성됩니다.
     if training_args.do_predict:
-        f = Features(
+        f = Features( # Features로 데이터 셋 형식화?
             {
                 "context": Value(dtype="string", id=None),
                 "id": Value(dtype="string", id=None),
@@ -142,7 +150,7 @@ def run_sparse_retrieval(
 
     # train data 에 대해선 정답이 존재하므로 id question context answer 로 데이터셋이 구성됩니다.
     elif training_args.do_eval:
-        f = Features(
+        f = Features( # Features로 형식화?
             {
                 "answers": Sequence(
                     feature={
@@ -198,7 +206,7 @@ def run_mrc(
             stride=data_args.doc_stride,
             return_overflowing_tokens=True,
             return_offsets_mapping=True,
-            #return_token_type_ids=False, # roberta모델을 사용할 경우 False, bert를 사용할 경우 True로 표기해야합니다.
+            return_token_type_ids=False, # roberta모델을 사용할 경우 False, bert를 사용할 경우 True로 표기해야합니다.
             padding="max_length" if data_args.pad_to_max_length else False,
         )
 

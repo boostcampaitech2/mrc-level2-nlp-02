@@ -1,7 +1,7 @@
 /0_practice
 /__pycache__
 /elastic_search
-/models
+/models/
 /runs
 /outputs
 /wandb

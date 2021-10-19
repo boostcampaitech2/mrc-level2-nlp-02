@@ -56,9 +56,15 @@ def search_with_elastic(es: Elasticsearch, question: str, size: int)->str:
   res = es.search(index='wiki_documents', body=query, size=size)
   
   relevent_contexts = ''
+  max_score = res['hits']['hits'][0]['_score']
+  
   for i in range(size):
-    relevent_contexts += res['hits']['hits'][i]['_source']['text']
-    relevent_contexts += ' '
+    score = res['hits']['hits'][i]['_score']
+    if score > max_score * 0.85:
+      relevent_contexts += res['hits']['hits'][i]['_source']['text']
+      relevent_contexts += ' '
+    else:
+      break
   
   return relevent_contexts
   

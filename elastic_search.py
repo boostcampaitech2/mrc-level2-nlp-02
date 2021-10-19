@@ -3,6 +3,8 @@ from elasticsearch import Elasticsearch
 import pandas as pd
 from datasets import DatasetDict, Dataset
 from transformers import TrainingArguments
+import pororo
+from typing import List
 
 from arguments import (
     ModelArguments,
@@ -46,13 +48,31 @@ def run_elastic_sparse_retrieval(
   return datasets
 
 def search_with_elastic(es: Elasticsearch, question: str, size: int)->str:
-  query = {
-    'query': {
-      'match': {
-        'text': question
+  match_phrases = create_match_phrases(question)
+
+  # query = {
+  #   'query': {
+  #     'match': {
+  #       'text': question
+  #     }
+  #   }
+  # }
+  query={
+    'query':{
+      'bool':{
+        'should':[
+          {
+            'match':{
+              'text':question,
+            }
+          },
+          # {'match_phrase': {'text':'용병'}},
+          *match_phrases
+        ]
       }
     }
   }
+
   res = es.search(index='wiki_documents', body=query, size=size)
   
   relevent_contexts = ''
@@ -67,8 +87,18 @@ def search_with_elastic(es: Elasticsearch, question: str, size: int)->str:
       break
   
   return relevent_contexts
-  
 
+def create_match_phrases(question)-> List:
+  ner = pororo.Pororo(task='ner', lang='ko')
+  nered_question = ner(question)
+
+  match_phrases = []
+
+  for word in nered_question:
+    if word[1] != 'O':
+      match_phrases.append({'match_phrase':{'text': word[0]}})
+  
+  return match_phrases
 
 
 

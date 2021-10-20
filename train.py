@@ -1,6 +1,7 @@
 import logging
 import os
 import sys
+import importlib
 
 from typing import List, Callable, NoReturn, NewType, Any
 import dataclasses
@@ -19,6 +20,7 @@ from transformers import (
 from tokenizers import Tokenizer
 from tokenizers.models import WordPiece
 
+from model import WeightedLayerPoolingRobertaQA
 from utils_qa import postprocess_qa_predictions, check_no_error
 from trainer_qa import QuestionAnsweringTrainer
 from retrieval import SparseRetrieval
@@ -28,6 +30,7 @@ from arguments import (
     DataTrainingArguments,
 )
 
+import wandb
 
 logger = logging.getLogger(__name__)
 
@@ -81,11 +84,20 @@ def main():
         # rust version이 비교적 속도가 빠릅니다.
         use_fast=True,
     )
-    model = AutoModelForQuestionAnswering.from_pretrained(
-        model_args.model_name_or_path,
-        from_tf=bool(".ckpt" in model_args.model_name_or_path),
-        config=config,
-    )
+
+    if model_args.reader_custom_model is not None:
+        RD_custom_model = getattr(importlib.import_module("model"), model_args.reader_custom_model)
+        model = RD_custom_model(
+            model_name=model_args.model_name_or_path, config=config,
+        )
+    else :
+        model = AutoModelForQuestionAnswering.from_pretrained(
+            model_args.model_name_or_path,
+            from_tf=bool(".ckpt" in model_args.model_name_or_path),
+            config=config,
+        )
+    
+
 
     print(
         type(training_args),
@@ -124,6 +136,10 @@ def run_mrc(
     # (question|context) 혹은 (context|question)로 세팅 가능합니다.
     pad_on_right = tokenizer.padding_side == "right"
 
+    # token type ids 여부를 위해 roberta model인지 확인합니다.
+    # model_name_or_path argumnet 내에 roberat라는 string이 존재해야합니다.
+    roberta_flag = not 'roberta' in model.config.architectures[0].lower()
+
     # 오류가 있는지 확인합니다.
     last_checkpoint, max_seq_length = check_no_error(
         data_args, training_args, datasets, tokenizer
@@ -131,7 +147,7 @@ def run_mrc(
 
     # Train preprocessing / 전처리를 진행합니다.
     def prepare_train_features(examples):
-        # truncation과 padding(length가 짧을때만)을 통해 toknization을 진행하며, stride를 이용하여 overflow를 유지합니다.
+        # truncation과 padding(length가 짧을때만)을 통해 tokenization을 진행하며, stride를 이용하여 overflow를 유지합니다.
         # 각 example들은 이전의 context와 조금씩 겹치게됩니다.
         tokenized_examples = tokenizer(
             examples[question_column_name if pad_on_right else context_column_name],
@@ -141,7 +157,7 @@ def run_mrc(
             stride=data_args.doc_stride,
             return_overflowing_tokens=True,
             return_offsets_mapping=True,
-            #return_token_type_ids=False, # roberta모델을 사용할 경우 False, bert를 사용할 경우 True로 표기해야합니다.
+            return_token_type_ids=roberta_flag, # roberta모델을 사용할 경우 False, bert를 사용할 경우 True로 표기해야합니다.
             padding="max_length" if data_args.pad_to_max_length else False,
         )
 
@@ -233,7 +249,7 @@ def run_mrc(
             stride=data_args.doc_stride,
             return_overflowing_tokens=True,
             return_offsets_mapping=True,
-            #return_token_type_ids=False, # roberta모델을 사용할 경우 False, bert를 사용할 경우 True로 표기해야합니다.
+            return_token_type_ids=roberta_flag, # roberta모델을 사용할 경우 False, bert를 사용할 경우 True로 표기해야합니다.
             padding="max_length" if data_args.pad_to_max_length else False,
         )
 
@@ -309,7 +325,8 @@ def run_mrc(
 
     def compute_metrics(p: EvalPrediction):
         return metric.compute(predictions=p.predictions, references=p.label_ids)
-
+    
+    
     # Trainer 초기화
     trainer = QuestionAnsweringTrainer( 
         model=model,
@@ -322,6 +339,13 @@ def run_mrc(
         post_process_function=post_processing_function,
         compute_metrics=compute_metrics,
     )
+    # wandb.init(
+    #     entity="klue-level2-nlp-02",
+    #     project="mrc_project_1",
+    #     name=model_args.model_name_or_path,# + "_" + str(fold_idx),
+    #     group=model_args.model_name_or_path# + "-k_fold" if args.k_fold > 0 else args.PLM,
+    # )
+    # wandb.config.update(training_args)
 
     # Training
     if training_args.do_train:

@@ -26,6 +26,12 @@ class ModelArguments:
             "help": "Pretrained tokenizer name or path if not the same as model_name"
         },
     )
+    reader_custom_model: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "Custom models name in module of model"
+        },    
+    )
 
 
 @dataclass

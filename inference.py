@@ -181,6 +181,10 @@ def run_mrc(
     # (question|context) 혹은 (context|question)로 세팅 가능합니다.
     pad_on_right = tokenizer.padding_side == "right"
 
+    # token type ids 여부를 위해 roberta model인지 확인합니다.
+    # model_name_or_path argumnet 내에 roberat라는 string이 존재해야합니다.
+    roberta_flag = not 'roberta' in model.config.architectures[0].lower()
+
     # 오류가 있는지 확인합니다.
     last_checkpoint, max_seq_length = check_no_error(
         data_args, training_args, datasets, tokenizer
@@ -198,7 +202,7 @@ def run_mrc(
             stride=data_args.doc_stride,
             return_overflowing_tokens=True,
             return_offsets_mapping=True,
-            #return_token_type_ids=False, # roberta모델을 사용할 경우 False, bert를 사용할 경우 True로 표기해야합니다.
+            return_token_type_ids=roberta_flag, # roberta모델을 사용할 경우 False, bert를 사용할 경우 True로 표기해야합니다.
             padding="max_length" if data_args.pad_to_max_length else False,
         )
 

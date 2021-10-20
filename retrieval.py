@@ -14,7 +14,7 @@ from typing import List, Tuple, NoReturn, Any, Optional, Union
 
 
 from sklearn.feature_extraction.text import TfidfVectorizer
-
+import re
 from datasets import (
     Dataset,
     load_from_disk,
@@ -28,7 +28,13 @@ def timer(name):
     yield
     print(f"[{name}] done in {time.time() - t0:.3f} s")
 
-
+def preprocessing(context):
+    context = context.replace("\n##"," ")
+    context = context.replace("\n#"," ")
+    context = context.replace("\\n"," ")
+    context = context.replace("\n"," ")
+    context = re.sub(r"[^a-zA-Z0-9가-힣ㄱ-ㅎㅏ-ㅣぁ-ゔァ-ヴー々〆〤一-龥()?!∧≪≫『』\'<>〈〉:「」＜＞<>》《・\"-“”\s\.\‘’%,]", " ", context)
+    return context  
 
 class SparseRetrieval:
     def __init__(
@@ -66,6 +72,9 @@ class SparseRetrieval:
         self.contexts = list(
             dict.fromkeys([v["text"] for v in wiki.values()])
         )  # set 은 매번 순서가 바뀌므로
+        
+        self.contexts = list(map(preprocessing,self.contexts))
+        
         print(f"Lengths of unique contexts : {len(self.contexts)}")
         self.ids = list(range(len(self.contexts)))
 
@@ -255,26 +264,36 @@ class SparseRetrieval:
         doc_indices = []
         for i in tqdm(tokenized_queries):
             scores = self.BM25.get_scores(i)
-            
+            boundary=[]
             sorted_score = np.sort(scores)[::-1]
             sorted_id = np.argsort(scores)[::-1]
-            boundary = []  
-            doc_scores.append(sorted_score[:k])
-            doc_indices.append(sorted_id[:k])
-            ## 해당 query의 가장 높은 score(sorted_score[0])의 x0.85까지의 점수만 받는다.
-#             for z in sorted_score:
-#                 if z>=sorted_score[0]*0.85:
-#                     boundary.append(True)
-#                 else:
-#                     boundary.append(False)        
             
-#             if len(sorted_score[boundary])<=k:
-#                 doc_scores.append(sorted_score[boundary])
-#                 doc_indices.append(sorted_id[boundary])
-#             else:
-                # doc_scores.append(sorted_score[:k])
-                # doc_indices.append(sorted_id[:k])
+            for z in sorted_score:
+                if z>=sorted_score[0]*0.85:
+                    boundary.append(True)
+                else:
+                    boundary.append(False)        
+            
+            if len(sorted_score[boundary])<=k:
+                doc_scores.append(sorted_score[boundary])
+                doc_indices.append(sorted_id[boundary])
+            else:
+                doc_scores.append(sorted_score[:k])
+                doc_indices.append(sorted_id[:k])
         return doc_scores, doc_indices
+            
+#         print("Build BM25 score, indices")
+#         tokenized_queries= [self.tokenizer(i) for i in queries]        
+#         doc_scores = []
+#         doc_indices = []
+#         for i in tqdm(tokenized_queries):
+#             scores = self.BM25.get_scores(i)
+            
+#             sorted_score = np.sort(scores)[::-1]
+#             sorted_id = np.argsort(scores)[::-1]
+#             doc_scores.append(sorted_score[:k])
+#             doc_indices.append(sorted_id[:k])
+#         return doc_scores, doc_indices
 
     def retrieve_faiss(
         self, query_or_dataset: Union[str, Dataset], topk: Optional[int] = 1

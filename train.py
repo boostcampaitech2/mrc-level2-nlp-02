@@ -29,6 +29,7 @@ from arguments import (
     DataTrainingArguments,
 )
 
+import wandb
 
 logger = logging.getLogger(__name__)
 
@@ -366,6 +367,15 @@ def run_mrc(
         post_process_function=post_processing_function,
         compute_metrics=compute_metrics,
     )
+
+    wandb.init(
+        entity="klue-level2-nlp-02",
+        project="mrc_project_1",
+        name=model_args.model_name_or_path,
+        group=model_args.model_name_or_path + '/Preprocessing'
+    )
+    wandb.config.update(training_args)
+
 
     # Training
     if training_args.do_train:

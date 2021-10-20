@@ -1,19 +1,24 @@
 import logging
 import os
 import sys
+import nltk
 
 from typing import List, Callable, NoReturn, NewType, Any
 import dataclasses
 from datasets import load_metric, load_from_disk, Dataset, DatasetDict
 #from datasets import Value, Features, Sequence
 
-from transformers import AutoConfig, AutoModelForQuestionAnswering, AutoTokenizer
-
+from transformers import (
+    AutoConfig, AutoModelForQuestionAnswering, AutoTokenizer, AutoModelForSeq2SeqLM,
+)
 from transformers import (
     DataCollatorWithPadding,
+    DataCollatorForSeq2Seq,
     EvalPrediction,
     HfArgumentParser,
     TrainingArguments,
+    Seq2SeqTrainer,
+    Seq2SeqTrainingArguments,
     set_seed,
 )
 
@@ -38,7 +43,8 @@ def main():
     # --help flag 를 실행시켜서 확인할 수 도 있습니다.
 
     parser = HfArgumentParser(
-        (ModelArguments, DataTrainingArguments, TrainingArguments)
+        (ModelArguments, DataTrainingArguments,
+        TrainingArguments if ModelArguments.reader_type == 'extraction' else Seq2SeqTrainingArguments)
     )
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
     print(model_args.model_name_or_path)
@@ -46,6 +52,12 @@ def main():
     # [참고] argument를 manual하게 수정하고 싶은 경우에 아래와 같은 방식을 사용할 수 있습니다
     # training_args.per_device_train_batch_size = 4
     # print(training_args.per_device_train_batch_size)
+
+    batch_size = 4
+    if model_args.reader_type == 'generation':
+        training_args.per_device_train_batch_size = batch_size
+        training_args.per_device_eval_batch_size = batch_size
+        training_args.predict_with_generate=True
 
     print(f"model is from {model_args.model_name_or_path}")
     print(f"data is from {data_args.dataset_name}")
@@ -82,11 +94,19 @@ def main():
         # rust version이 비교적 속도가 빠릅니다.
         use_fast=True,
     )
-    model = AutoModelForQuestionAnswering.from_pretrained(
-        model_args.model_name_or_path,
-        from_tf=bool(".ckpt" in model_args.model_name_or_path), # Load the model weights from a TensorFlow checkpoint save file
-        config=config,
-    )
+
+    if model_args.reader_type == 'extraction':
+        model = AutoModelForQuestionAnswering.from_pretrained(
+            model_args.model_name_or_path,
+            from_tf=bool(".ckpt" in model_args.model_name_or_path), # Load the model weights from a TensorFlow checkpoint save file
+            config=config,
+        )
+    elif model_args.reader_type == 'generation':
+        model = AutoModelForSeq2SeqLM.from_pretrained(
+            model_args.model_name_or_path,
+            from_tf=bool(".ckpt" in model_args.model_name_or_path),
+            config=config,
+        )
 
     print(
         type(training_args),
@@ -96,43 +116,15 @@ def main():
         type(model),
     )
     
-    # datasets = run_sparse_retrieval(
-    #         tokenizer.tokenize,
-    #         datasets,
-    #         training_args,
-    #         data_args,
-    #     )
-    
     if data_args.train_retrieval:
         retriever = SparseRetrieval(tokenize_fn=tokenizer.tokenize,
                                     data_path="../data",
                                     context_path="wikipedia_documents.json")
-        #retriever.get_sparse_embedding()
         retriever.get_sparse_BM25()
-        #datasets = run_sparse_embedding(datasets, topk=data_args.top_k_retrieval)
-
     
     # do_train mrc model 혹은 do_eval mrc model
     if training_args.do_train or training_args.do_eval:
         run_mrc(data_args, training_args, model_args, datasets, tokenizer, model)
-        
-# def run_sparse_embedding(datasets, topk):
-#     retriever = SparseRetrieval(tokenize_fn=tokenize,
-#                                 data_path="../data",
-#                                 context_path="wikipedia_documents.json")
-#     retriever.get_sparse_embedding()
-    
-#     train_df = retriever.retrieve(datasets["train"], topk=topk)
-#     val_df = retriever.retrieve(datasets['validation'], topk=topk)
-#     f = Features({'answers': Sequence(feature={'text': Value(dtype='string', id=None),
-#                                                 'answer_start': Value(dtype='int32', id=None)},
-#                                         length=-1, id=None),
-#                     'context': Value(dtype='string', id=None),
-#                     'id': Value(dtype='string', id=None),
-#                     'question': Value(dtype='string', id=None)})
-
-#     datasets = DatasetDict({'train': Dataset.from_pandas(train_df, features=f), 'validation': Dataset.from_pandas(val_df, features=f)})
-#     return datasets
 
 
 def run_mrc(
@@ -165,7 +157,7 @@ def run_mrc(
     )
 
     # Train preprocessing / 전처리를 진행합니다.
-    def prepare_train_features(examples):
+    def prepare_train_features_extraction(examples):
         # truncation과 padding(length가 짧을때만)을 통해 toknization을 진행하며, stride를 이용하여 overflow를 유지합니다.
         # 각 example들은 이전의 context와 조금씩 겹치게됩니다.
         tokenized_examples = tokenizer(
@@ -245,6 +237,32 @@ def run_mrc(
 
         return tokenized_examples
 
+    def prepare_generation(examples):
+        inputs = [f"question: {q}  context: {c} </s>" for q, c in zip(examples[question_column_name], examples[context_column_name])]
+        targets = [f'{a["text"][0]} </s>' for a in examples[answer_column_name]]
+        tokenized_examples = tokenizer(
+            inputs,
+            truncation=True, # 한 문장으로 넣어주니까 second sequence 없음 (only_second 옵션시 에러 발생)
+            max_length=max_seq_length,
+            return_token_type_ids=False, # roberta모델을 사용할 경우 False, bert를 사용할 경우 True로 표기해야합니다.
+            padding="max_length" if data_args.pad_to_max_length else False,
+        )
+
+        with tokenizer.as_target_tokenizer():
+            labels = tokenizer(
+                targets,
+                truncation=True,
+                max_length=data_args.max_answer_length,
+                padding="max_length" if data_args.pad_to_max_length else False,
+            )
+
+        tokenized_examples["labels"] = labels["input_ids"]
+        tokenized_examples["example_id"] = []
+        for i in range(len(tokenized_examples["labels"])):
+            tokenized_examples["example_id"].append(examples["id"][i])
+
+        return tokenized_examples
+
     if training_args.do_train:
         if "train" not in datasets:
             raise ValueError("--do_train requires a train dataset")
@@ -252,7 +270,7 @@ def run_mrc(
 
         # dataset에서 train feature를 생성합니다.
         train_dataset = train_dataset.map(
-            prepare_train_features,
+            prepare_train_features_extraction if model_args.reader_type=='extraction' else prepare_generation,
             batched=True,
             num_proc=data_args.preprocessing_num_workers,
             remove_columns=column_names,
@@ -260,7 +278,7 @@ def run_mrc(
         )
 
     # Validation preprocessing
-    def prepare_validation_features(examples):
+    def prepare_validation_features_extraction(examples):
         # truncation과 padding(length가 짧을때만)을 통해 toknization을 진행하며, stride를 이용하여 overflow를 유지합니다.
         # 각 example들은 이전의 context와 조금씩 겹치게됩니다.
         tokenized_examples = tokenizer(
@@ -303,7 +321,7 @@ def run_mrc(
 
         # Validation Feature 생성
         eval_dataset = eval_dataset.map(
-            prepare_validation_features,
+            prepare_validation_features_extraction if model_args.reader_type=='extraction' else prepare_generation,
             batched=True,
             num_proc=data_args.preprocessing_num_workers,
             remove_columns=column_names,
@@ -317,12 +335,17 @@ def run_mrc(
     # pad_to_multiple_of -> padding한다는 의미?
     print("-------------------------------------")
     print(training_args.fp16) # False
-    data_collator = DataCollatorWithPadding(
-        tokenizer, pad_to_multiple_of=8 if training_args.fp16 else None
-    )
+    if model_args.reader_type == 'extraction':
+        data_collator = DataCollatorWithPadding(
+            tokenizer, pad_to_multiple_of=8 if training_args.fp16 else None
+        )
+    elif model_args.reader_type == 'generation':
+        data_collator = DataCollatorForSeq2Seq(
+            tokenizer, label_pad_token_id=tokenizer.pad_token_id, pad_to_multiple_of=8 if training_args.fp16 else None,
+        )
 
     # Post-processing:
-    def post_processing_function(examples, features, predictions, training_args):
+    def post_processing_function_extraction(examples, features, predictions, training_args):
         # Post-processing: start logits과 end logits을 original context의 정답과 match시킵니다.
         predictions = postprocess_qa_predictions(
             examples=examples, # 전처리 되지 않은 dataset
@@ -348,24 +371,60 @@ def run_mrc(
             return EvalPrediction(
                 predictions=formatted_predictions, label_ids=references
             )
+    
+    def post_processing_function_generation(predictions, labels):
+        preds = [pred.strip() for pred in predictions]
+        labels = [label.strip() for label in labels]
+        preds = ["\n".join(nltk.sent_tokenize(pred)) for pred in preds]
+        labels = ["\n".join(nltk.sent_tokenize(label)) for label in labels]
+        return preds, labels
 
     metric = load_metric("squad")
 
     def compute_metrics(p: EvalPrediction):
         return metric.compute(predictions=p.predictions, references=p.label_ids)
+    
+    def compute_metrics_generation(eval_preds):
+        preds, labels = eval_preds
+        if isinstance(preds, tuple):
+            preds = preds[0]
+        
+        decoded_preds = tokenizer.batch_decode(preds, skip_special_tokens=True)
+        # decoded_labels은 rouge metric을 위한 것이며, f1/em을 구할 때 사용되지 않음
+        decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
+
+        # 간단한 post-processing
+        decoded_preds, decoded_labels = post_processing_function_generation(decoded_preds, decoded_labels)
+
+        formatted_predictions = [{"id": ex["id"], "prediction_text": decoded_preds[i]} for i, ex in enumerate(datasets["validation"].select(range(16)))]
+        references = [{"id": ex["id"], "answers": ex["answers"]} for ex in datasets["validation"].select(range(16))] # 16 == max_val_samples
+
+        result = metric.compute(predictions=formatted_predictions, references=references)
+        return result
 
     # Trainer 초기화
-    trainer = QuestionAnsweringTrainer( 
-        model=model,
-        args=training_args,
-        train_dataset=train_dataset if training_args.do_train else None,
-        eval_dataset=eval_dataset if training_args.do_eval else None,
-        eval_examples=datasets["validation"] if training_args.do_eval else None,
-        tokenizer=tokenizer,
-        data_collator=data_collator,
-        post_process_function=post_processing_function,
-        compute_metrics=compute_metrics,
-    )
+    if model_args.reader_type == 'extraction':
+        trainer = QuestionAnsweringTrainer( 
+            model=model,
+            args=training_args,
+            train_dataset=train_dataset if training_args.do_train else None,
+            eval_dataset=eval_dataset if training_args.do_eval else None,
+            eval_examples=datasets["validation"] if training_args.do_eval else None,
+            tokenizer=tokenizer,
+            data_collator=data_collator,
+            post_process_function=post_processing_function_extraction,
+            compute_metrics=compute_metrics,
+        )
+    elif model_args.reader_type == 'generation':
+        trainer = Seq2SeqTrainer(
+            model=model,
+            args=training_args,
+            train_dataset=train_dataset if training_args.do_train else None,
+            eval_dataset=eval_dataset if training_args.do_eval else None,
+            tokenizer=tokenizer,
+            data_collator=data_collator,
+            compute_metrics=compute_metrics_generation,
+        ) # Trainer에는 post_process_function 인자가 없음 (QuestionAnswerTrainer처럼 쓰려면 오버라이드 해야 함)
 
     # Training
     if training_args.do_train:

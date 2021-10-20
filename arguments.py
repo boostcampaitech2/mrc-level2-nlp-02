@@ -14,14 +14,20 @@ class ModelArguments:
             "help": "Path to pretrained model or model identifier from huggingface.co/models"
         },
     )
+    reader_type: str = field(
+        default="extraction",
+        metadata={
+            "help": "MRC model type (Extraction-based or Generation-based)"
+        },
+    )
     config_name: Optional[str] = field(
-        default="klue/roberta-large",
+        default=None,
         metadata={
             "help": "Pretrained config name or path if not the same as model_name"
         },
     )
     tokenizer_name: Optional[str] = field(
-        default="klue/roberta-large",
+        default=None,
         metadata={
             "help": "Pretrained tokenizer name or path if not the same as model_name"
         },

@@ -1,8 +1,7 @@
-
 import re
 
 class Preprocessor :
-    def __init__(self, ) :
+    def __init__(self) :
         ch_start_idx = int('4E00', 16)
         ch_end_idx = int('9FFF', 16)
         jp_start_idx = int('3040', 16)
@@ -56,6 +55,8 @@ class Preprocessor :
         Returns:
             [str]: text which '\n' characters is removed
         """
+        txt = txt.replace('</br>', '')
+        txt = txt.replace(r'\n**' , '')
         txt = txt.replace(r'\n*' , '')
         txt = txt.replace(r'\n#' , '')
         txt = txt.replace(r'\n' , '')
@@ -84,3 +85,4 @@ class Preprocessor :
         txt = self.ch_sub.sub('[CHN]', txt)
         txt = self.jp_sub.sub('[JPN]', txt)
         return txt
+

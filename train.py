@@ -106,22 +106,27 @@ def main():
     #     )
     
     # Add Special token to ookenizer
-    special_tokens_dict = {'additional_special_tokens': ['[JPN]','[CHN]']}
+    special_tokens_dict = {'additional_special_tokens': ['[CHN]', '[JPN]']}
     num_added_toks = tokenizer.add_special_tokens(special_tokens_dict)  
     model.resize_token_embeddings(len(tokenizer))
     # Preprocessing
+    print('Data Preprocessing')
     preprocessor = Preprocessor()
     datasets = datasets.map(preprocessor)
-    
+
+    print('Make Sparse Embedding using BM25')
     if data_args.train_retrieval:
+        # make class
         retriever = SparseRetrieval(tokenize_fn=tokenizer.tokenize,
-                                    data_path="../data",
-                                    context_path="wikipedia_documents.json")
+                                    preprocessor = preprocessor,
+                                    data_path=model_args.model_name_or_path,
+                                    context_path="../data/wikipedia_documents.json")
         #retriever.get_sparse_embedding()
+        # setting bm25 embedding
         retriever.get_sparse_BM25()
         #datasets = run_sparse_embedding(datasets, topk=data_args.top_k_retrieval)
-
     
+    print('Running MRC Training')
     # do_train mrc model 혹은 do_eval mrc model
     if training_args.do_train or training_args.do_eval:
         run_mrc(data_args, training_args, model_args, datasets, tokenizer, model)

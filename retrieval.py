@@ -35,8 +35,9 @@ class SparseRetrieval:
     def __init__(
         self,
         tokenize_fn,
-        data_path: Optional[str] = "../data/",
-        context_path: Optional[str] = "wikipedia_documents.json",
+        preprocessor : Preprocessor,
+        data_path: Optional[str] ,
+        context_path: Optional[str] = "../data/wikipedia_documents.json",
     ) -> NoReturn:
 
         """
@@ -61,18 +62,18 @@ class SparseRetrieval:
         """
 
         self.data_path = data_path
-        with open(os.path.join(data_path, context_path), "r", encoding="utf-8") as f:
+        with open(context_path, "r", encoding="utf-8") as f:
             wiki = json.load(f)
 
         self.contexts = list(
             dict.fromkeys([v["text"] for v in wiki.values()])
         )  # set 은 매번 순서가 바뀌므로
-        
-        preprocessor = Preprocessor()
-        self.contexts = list(map(preprocessor.preprocess_c, self.contexts))
-        
+
         print(f"Lengths of unique contexts : {len(self.contexts)}")
         self.ids = list(range(len(self.contexts)))
+        
+        preprocessor = Preprocessor()
+        self.contexts = list(map(preprocessor.process_c, self.contexts))
 
         # Transform by vectorizer
         self.tfidfv = TfidfVectorizer(

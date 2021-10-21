@@ -91,10 +91,6 @@ def main():
         config=config,
     )
 
-    # Preprocessing
-    preprocessor = Preprocessor()
-    datasets = datasets.map(preprocessor)
-    
     # True일 경우 : run passage retrieval
     if data_args.eval_retrieval:
         datasets = run_sparse_retrieval(
@@ -102,19 +98,25 @@ def main():
             datasets,
             training_args,
             data_args,
-        )
+            data_path = '../data',
+            context_path = "wikipedia_documents.json"
+        )    
+    
+    # Preprocessing retrieved Data
+    preprocessor = Preprocessor()
+    datasets = datasets.map(preprocessor)
 
     # eval or predict mrc model
     if training_args.do_eval or training_args.do_predict:
         run_mrc(data_args, training_args, model_args, datasets, tokenizer, model)
-    
+
 
 def run_sparse_retrieval(
     tokenize_fn: Callable[[str], List[str]],
     datasets: DatasetDict,
     training_args: TrainingArguments,
     data_args: DataTrainingArguments,
-    data_path: str = "../data",
+    data_path: str = '../data',
     context_path: str = "wikipedia_documents.json",
 ) -> DatasetDict:
 

@@ -1,1 +1,1 @@
-# EDA를 위한 폴더
+# Reforming reader model

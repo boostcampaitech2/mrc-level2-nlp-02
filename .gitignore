@@ -3,3 +3,5 @@ models/**
 outputs/**
 wandb/**
 runs/**
+
+running.sh

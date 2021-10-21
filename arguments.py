@@ -9,7 +9,7 @@ class ModelArguments:
     """
 
     model_name_or_path: str = field(
-        default="klue/bert-base",
+        default="klue/roberta-large",
         metadata={
             "help": "Path to pretrained model or model identifier from huggingface.co/models"
         },
@@ -26,11 +26,24 @@ class ModelArguments:
             "help": "Pretrained tokenizer name or path if not the same as model_name"
         },
     )
+    # # # 추가
     reader_custom_model: Optional[str] = field(
         default=None,
         metadata={
             "help": "Custom models name in module of model"
         },    
+    )
+    pooled_lalyer_start: Optional[int] = field(
+        default=-4,
+        metadata={
+            "help": "Index of start pooling layer (default: -4)"
+        },   
+    )
+    wandb_tag: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "wandb tag string"
+        },   
     )
 
 
@@ -49,7 +62,7 @@ class DataTrainingArguments:
         metadata={"help": "Overwrite the cached training and evaluation sets"},
     )
     preprocessing_num_workers: Optional[int] = field(
-        default=None,
+        default=2,
         metadata={"help": "The number of processes to use for the preprocessing."},
     )
     max_seq_length: int = field(
@@ -60,7 +73,7 @@ class DataTrainingArguments:
         },
     )
     pad_to_max_length: bool = field(
-        default=False,
+        default=True, #True
         metadata={
             "help": "Whether to pad all samples to `max_seq_length`. "
             "If False, will pad the samples dynamically when batching to the maximum length in the batch (which can "
@@ -88,11 +101,16 @@ class DataTrainingArguments:
         default=64, metadata={"help": "Define how many clusters to use for faiss."}
     )
     top_k_retrieval: int = field(
-        default=1,
+        default=50,
         metadata={
             "help": "Define how many top-k passages to retrieve based on similarity."
         },
     )
     use_faiss: bool = field(
         default=False, metadata={"help": "Whether to build with faiss"}
+    )
+    # # # 추가
+    train_retrieval: bool = field(
+        default=True,
+        metadata={"help": "Whether to train sparse/dense embedding (prepare for retrieval)."},
     )

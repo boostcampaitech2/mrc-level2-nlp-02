@@ -6,10 +6,13 @@ Open-Domain Question Answering 을 수행하는 inference 코드 입니다.
 
 
 import logging
+import os
 import sys
 from typing import Callable, List, Dict, NoReturn, Tuple
+import importlib
 
 import numpy as np
+import torch
 
 from datasets import (
     load_metric,
@@ -40,6 +43,8 @@ from arguments import (
     DataTrainingArguments,
 )
 
+import wandb
+
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +52,8 @@ logger = logging.getLogger(__name__)
 def main():
     # 가능한 arguments 들은 ./arguments.py 나 transformer package 안의 src/transformers/training_args.py 에서 확인 가능합니다.
     # --help flag 를 실행시켜서 확인할 수 도 있습니다.
-
+    
+    # dataclass를 통해 변수를 만들고 HfArgumentParser를 통해 합쳐서 사용
     parser = HfArgumentParser(
         (ModelArguments, DataTrainingArguments, TrainingArguments)
     )
@@ -87,11 +93,23 @@ def main():
         else model_args.model_name_or_path,
         use_fast=True,
     )
-    model = AutoModelForQuestionAnswering.from_pretrained(
-        model_args.model_name_or_path,
-        from_tf=bool(".ckpt" in model_args.model_name_or_path),
-        config=config,
-    )
+
+    if model_args.reader_custom_model is not None:
+        RD_custom_model = getattr(importlib.import_module("model"), model_args.reader_custom_model)
+        print(model_args.reader_custom_model)
+        model = RD_custom_model(
+            model_name=model_args.model_name_or_path, config=config,
+            layer_start=model_args.pooled_lalyer_start,
+        )
+        if training_args.output_dir == model_args.model_name_or_path :
+            print(training_args.output_dir)
+            model.load_state_dict(torch.load(os.path.join(training_args.output_dir, "pytorch_model.pt")))
+    else :
+        model = AutoModelForQuestionAnswering.from_pretrained(
+            model_args.model_name_or_path,
+            from_tf=bool(".ckpt" in model_args.model_name_or_path),
+            config=config,
+        )
 
     # True일 경우 : run passage retrieval
     if data_args.eval_retrieval:
@@ -117,22 +135,29 @@ def run_sparse_retrieval(
 ) -> DatasetDict:
 
     # Query에 맞는 Passage들을 Retrieval 합니다.
+    # retriever 설정
     retriever = SparseRetrieval(
         tokenize_fn=tokenize_fn, data_path=data_path, context_path=context_path
     )
-    retriever.get_sparse_embedding()
-
-    if data_args.use_faiss:
-        retriever.build_faiss(num_clusters=data_args.num_clusters)
-        df = retriever.retrieve_faiss(
-            datasets["validation"], topk=data_args.top_k_retrieval
-        )
-    else:
-        df = retriever.retrieve(datasets["validation"], topk=data_args.top_k_retrieval)
+    
+    # Passage Embedding 만들기
+    #retriever.get_sparse_embedding()
+    retriever.get_sparse_BM25()
+    df = retriever.retrieve_BM25(datasets['validation'], topk=data_args.top_k_retrieval)
+    
+    ## bm25 때문에 잠시 지움
+    # faiss사용하거나 안 하거나 해서, query를 받아, retrieval한 passage와 id, query 등을 받는다.
+    # if data_args.use_faiss:
+    #     retriever.build_faiss(num_clusters=data_args.num_clusters)
+    #     df = retriever.retrieve_faiss(
+    #         datasets["validation"], topk=data_args.top_k_retrieval
+    #     )
+    # else:
+    #     df = retriever.retrieve(datasets["validation"], topk=data_args.top_k_retrieval)
 
     # test data 에 대해선 정답이 없으므로 id question context 로만 데이터셋이 구성됩니다.
     if training_args.do_predict:
-        f = Features(
+        f = Features( # Features로 데이터 셋 형식화?
             {
                 "context": Value(dtype="string", id=None),
                 "id": Value(dtype="string", id=None),
@@ -142,7 +167,7 @@ def run_sparse_retrieval(
 
     # train data 에 대해선 정답이 존재하므로 id question context answer 로 데이터셋이 구성됩니다.
     elif training_args.do_eval:
-        f = Features(
+        f = Features( # Features로 형식화?
             {
                 "answers": Sequence(
                     feature={
@@ -283,6 +308,18 @@ def run_mrc(
 
     def compute_metrics(p: EvalPrediction) -> Dict:
         return metric.compute(predictions=p.predictions, references=p.label_ids)
+    
+    if training_args.do_eval :
+        wandb_name = model_args.model_name_or_path
+        wandb_name += '-' + model_args.wandb_tag if model_args.wandb_tag is not None else ''
+        wandb_name += '-InferEval'
+        wandb.init(
+            entity="klue-level2-nlp-02",
+            project="mrc_project_model",
+            name=wandb_name,
+            group=model_args.model_name_or_path
+        )
+        wandb.config.update(training_args)
 
     print("init trainer...")
     # Trainer 초기화

@@ -6,6 +6,8 @@ import importlib
 from typing import List, Callable, NoReturn, NewType, Any
 import dataclasses
 from datasets import load_metric, load_from_disk, Dataset, DatasetDict
+#from datasets import Value, Features, Sequence
+import torch
 
 from transformers import AutoConfig, AutoModelForQuestionAnswering, AutoTokenizer
 
@@ -20,7 +22,7 @@ from transformers import (
 from tokenizers import Tokenizer
 from tokenizers.models import WordPiece
 
-from model import WeightedLayerPoolingRobertaQA
+import model
 from utils_qa import postprocess_qa_predictions, check_no_error
 from trainer_qa import QuestionAnsweringTrainer
 from retrieval import SparseRetrieval
@@ -48,7 +50,6 @@ def main():
     # [참고] argument를 manual하게 수정하고 싶은 경우에 아래와 같은 방식을 사용할 수 있습니다
     # training_args.per_device_train_batch_size = 4
     # print(training_args.per_device_train_batch_size)
-
     print(f"model is from {model_args.model_name_or_path}")
     print(f"data is from {data_args.dataset_name}")
 
@@ -64,7 +65,7 @@ def main():
 
     # 모델을 초기화하기 전에 난수를 고정합니다.
     set_seed(training_args.seed)
-
+    
     datasets = load_from_disk(data_args.dataset_name)
     print(datasets)
 
@@ -81,24 +82,26 @@ def main():
         else model_args.model_name_or_path,
         # 'use_fast' argument를 True로 설정할 경우 rust로 구현된 tokenizer를 사용할 수 있습니다.
         # False로 설정할 경우 python으로 구현된 tokenizer를 사용할 수 있으며,
-        # rust version이 비교적 속도가 빠릅니다.
+        # run fast version이 비교적 속도가 빠릅니다.
         use_fast=True,
     )
 
     if model_args.reader_custom_model is not None:
         RD_custom_model = getattr(importlib.import_module("model"), model_args.reader_custom_model)
+        print(model_args.reader_custom_model)
         model = RD_custom_model(
             model_name=model_args.model_name_or_path, config=config,
+            layer_start=model_args.pooled_lalyer_start,
         )
+        if training_args.output_dir == model_args.model_name_or_path :
+            print(training_args.output_dir)
+            model.load_state_dict(torch.load(os.path.join(training_args.output_dir, "pytorch_model.pt")))
     else :
         model = AutoModelForQuestionAnswering.from_pretrained(
             model_args.model_name_or_path,
             from_tf=bool(".ckpt" in model_args.model_name_or_path),
             config=config,
         )
-    
-
-
     print(
         type(training_args),
         type(model_args),
@@ -106,10 +109,44 @@ def main():
         type(tokenizer),
         type(model),
     )
+    
+    # datasets = run_sparse_retrieval(
+    #         tokenizer.tokenize,
+    #         datasets,
+    #         training_args,
+    #         data_args,
+    #     )
+    
+    if data_args.train_retrieval:
+        retriever = SparseRetrieval(tokenize_fn=tokenizer.tokenize,
+                                    data_path="../data",
+                                    context_path="wikipedia_documents.json")
+        #retriever.get_sparse_embedding()
+        retriever.get_sparse_BM25()
+        #datasets = run_sparse_embedding(datasets, topk=data_args.top_k_retrieval)
 
+    
     # do_train mrc model 혹은 do_eval mrc model
     if training_args.do_train or training_args.do_eval:
         run_mrc(data_args, training_args, model_args, datasets, tokenizer, model)
+        
+# def run_sparse_embedding(datasets, topk):
+#     retriever = SparseRetrieval(tokenize_fn=tokenize,
+#                                 data_path="../data",
+#                                 context_path="wikipedia_documents.json")
+#     retriever.get_sparse_embedding()
+    
+#     train_df = retriever.retrieve(datasets["train"], topk=topk)
+#     val_df = retriever.retrieve(datasets['validation'], topk=topk)
+#     f = Features({'answers': Sequence(feature={'text': Value(dtype='string', id=None),
+#                                                 'answer_start': Value(dtype='int32', id=None)},
+#                                         length=-1, id=None),
+#                     'context': Value(dtype='string', id=None),
+#                     'id': Value(dtype='string', id=None),
+#                     'question': Value(dtype='string', id=None)})
+
+#     datasets = DatasetDict({'train': Dataset.from_pandas(train_df, features=f), 'validation': Dataset.from_pandas(val_df, features=f)})
+#     return datasets
 
 
 def run_mrc(
@@ -134,10 +171,10 @@ def run_mrc(
 
     # Padding에 대한 옵션을 설정합니다.
     # (question|context) 혹은 (context|question)로 세팅 가능합니다.
-    pad_on_right = tokenizer.padding_side == "right"
+    pad_on_right = tokenizer.padding_side == "right" # right 시, question|context!
 
     # token type ids 여부를 위해 roberta model인지 확인합니다.
-    # model_name_or_path argumnet 내에 roberat라는 string이 존재해야합니다.
+    # model_name_or_path argumnet 내에 roberat라는 string이 존재해야합니다.    
     roberta_flag = not 'roberta' in model.config.architectures[0].lower()
 
     # 오류가 있는지 확인합니다.
@@ -152,7 +189,7 @@ def run_mrc(
         tokenized_examples = tokenizer(
             examples[question_column_name if pad_on_right else context_column_name],
             examples[context_column_name if pad_on_right else question_column_name],
-            truncation="only_second" if pad_on_right else "only_first",
+            truncation="only_second" if pad_on_right else "only_first", # max_seq_length까지 truncate한다. pair의 두번째 파트(context)만 잘라냄.
             max_length=max_seq_length,
             stride=data_args.doc_stride,
             return_overflowing_tokens=True,
@@ -163,6 +200,7 @@ def run_mrc(
 
         # 길이가 긴 context가 등장할 경우 truncate를 진행해야하므로, 해당 데이터셋을 찾을 수 있도록 mapping 가능한 값이 필요합니다.
         sample_mapping = tokenized_examples.pop("overflow_to_sample_mapping")
+        
         # token의 캐릭터 단위 position를 찾을 수 있도록 offset mapping을 사용합니다.
         # start_positions과 end_positions을 찾는데 도움을 줄 수 있습니다.
         offset_mapping = tokenized_examples.pop("offset_mapping")
@@ -173,7 +211,7 @@ def run_mrc(
 
         for i, offsets in enumerate(offset_mapping):
             input_ids = tokenized_examples["input_ids"][i]
-            cls_index = input_ids.index(tokenizer.cls_token_id)  # cls index
+            cls_index = input_ids.index(tokenizer.cls_token_id)  # cls index = 0
 
             # sequence id를 설정합니다 (to know what is the context and what is the question).
             sequence_ids = tokenized_examples.sequence_ids(i)
@@ -193,12 +231,14 @@ def run_mrc(
 
                 # text에서 current span의 Start token index
                 token_start_index = 0
-                while sequence_ids[token_start_index] != (1 if pad_on_right else 0):
+                # right면, question(0)이 먼저 오므로 1
+                # left면, context(1)이 먼저 오므로 0
+                while sequence_ids[token_start_index] != (1 if pad_on_right else 0): # context 시작점
                     token_start_index += 1
 
                 # text에서 current span의 End token index
                 token_end_index = len(input_ids) - 1
-                while sequence_ids[token_end_index] != (1 if pad_on_right else 0):
+                while sequence_ids[token_end_index] != (1 if pad_on_right else 0): # context 끝나는 점
                     token_end_index -= 1
 
                 # 정답이 span을 벗어났는지 확인합니다(정답이 없는 경우 CLS index로 label되어있음).
@@ -291,6 +331,10 @@ def run_mrc(
     # Data collator
     # flag가 True이면 이미 max length로 padding된 상태입니다.
     # 그렇지 않다면 data collator에서 padding을 진행해야합니다.
+    # fp16 -> Whether to use 16-bit (mixed) precision training instead of 32-bit training. (default: false)
+    # pad_to_multiple_of -> padding한다는 의미?
+    print("-------------------------------------")
+    print(training_args.fp16) # False
     data_collator = DataCollatorWithPadding(
         tokenizer, pad_to_multiple_of=8 if training_args.fp16 else None
     )
@@ -299,12 +343,14 @@ def run_mrc(
     def post_processing_function(examples, features, predictions, training_args):
         # Post-processing: start logits과 end logits을 original context의 정답과 match시킵니다.
         predictions = postprocess_qa_predictions(
-            examples=examples,
-            features=features,
-            predictions=predictions,
+            examples=examples, # 전처리 되지 않은 dataset
+            features=features, # 전처리 된 dataset
+            predictions=predictions, # start logits과 the end logits을 나타내는 two arrays
             max_answer_length=data_args.max_answer_length,
             output_dir=training_args.output_dir,
         )
+        ## predictions으로 id와 예측 text가 나온다.
+        
         # Metric을 구할 수 있도록 Format을 맞춰줍니다.
         formatted_predictions = [
             {"id": k, "prediction_text": v} for k, v in predictions.items()
@@ -326,8 +372,8 @@ def run_mrc(
     def compute_metrics(p: EvalPrediction):
         return metric.compute(predictions=p.predictions, references=p.label_ids)
     
-    
     # Trainer 초기화
+    # training_args.eval_accumulation_steps = 30 # eval step시 oom 발생하면 사용
     trainer = QuestionAnsweringTrainer( 
         model=model,
         args=training_args,
@@ -339,13 +385,18 @@ def run_mrc(
         post_process_function=post_processing_function,
         compute_metrics=compute_metrics,
     )
-    # wandb.init(
-    #     entity="klue-level2-nlp-02",
-    #     project="mrc_project_1",
-    #     name=model_args.model_name_or_path,# + "_" + str(fold_idx),
-    #     group=model_args.model_name_or_path# + "-k_fold" if args.k_fold > 0 else args.PLM,
-    # )
-    # wandb.config.update(training_args)
+
+    wandb_name = model_args.model_name_or_path
+    wandb_name += '-' + model_args.wandb_tag if model_args.wandb_tag is not None else ''
+    wandb_name +='-train' if training_args.do_train else '-trainEval'
+    print(wandb_name)
+    wandb.init(
+        entity="klue-level2-nlp-02",
+        project="mrc_project_model",
+        name=wandb_name,
+        group=model_args.model_name_or_path
+    )
+    wandb.config.update(training_args)
 
     # Training
     if training_args.do_train:
@@ -364,6 +415,11 @@ def run_mrc(
         trainer.log_metrics("train", metrics)
         trainer.save_metrics("train", metrics)
         trainer.save_state()
+        
+        # if model_args.reader_custom_model is not None:
+        torch.save(
+            model.state_dict(), os.path.join(training_args.output_dir, "pytorch_model.pt")
+        )
 
         output_train_file = os.path.join(training_args.output_dir, "train_results.txt")
 
@@ -384,7 +440,6 @@ def run_mrc(
         metrics = trainer.evaluate()
 
         metrics["eval_samples"] = len(eval_dataset)
-
         trainer.log_metrics("eval", metrics)
         trainer.save_metrics("eval", metrics)
 

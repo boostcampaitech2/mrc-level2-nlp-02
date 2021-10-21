@@ -41,11 +41,9 @@ class RobertaQAWeightedLayerPooling(RobertaPreTrainedModel):
         self.qa_outputs = nn.Linear(config.hidden_size, config.num_labels)
 
         self.layer_start = layer_start
-        num_hidden_layers = self.roberta.config.num_hidden_layers
         if layer_weights is not None :
             self.layer_weights = layer_weights
         else :
-            # self.layer_weights = nn.Parameter(torch.tensor([1] * (num_hidden_layers+1 - layer_start), dtype=torch.float))
             self.layer_weights = nn.Parameter(torch.tensor([1] * (-layer_start), dtype=torch.float))
 
     def forward(
@@ -82,11 +80,7 @@ class RobertaQAWeightedLayerPooling(RobertaPreTrainedModel):
         all_layer_embedding = all_hidden_states[self.layer_start:, :, :, :]
         weight_factor = self.layer_weights.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1).expand(all_layer_embedding.size())
         weighted_average = (weight_factor*all_layer_embedding).sum(dim=0) / self.layer_weights.sum()
-    
-        # breakpoint()
-        # sequence_output = outputs[0]
-        # logits = self.qa_outputs(sequence_output)
-        
+          
         logits = self.qa_outputs(weighted_average)
         start_logits, end_logits = logits.split(1, dim=-1)
         start_logits = start_logits.squeeze(-1).contiguous()
@@ -117,25 +111,36 @@ class RobertaQAWeightedLayerPooling(RobertaPreTrainedModel):
             loss=total_loss,
             start_logits=start_logits,
             end_logits=end_logits,
-            #hidden_states=outputs.hidden_states,
             attentions=outputs.attentions,
         )
 
 class RobertaQALSTM(RobertaPreTrainedModel):
-    def __init__(self, model_name, config, layer_start: int = -4, hidden_dim: int = 128, layer_weights = None):
+    """[summary]
+    Roberta encoder 결과 뒤에 LSTM model 쌓기
+    Args:
+        num_layer [int] :
+            LSTM layer 개수 지정
+        
+        dropout_ratio [int]:
+            dropout ratio
+
+        hidden_dim [int] :
+            LSTM hidden dimension
+    """
+    def __init__(self, model_name, config, num_layer: int = 2, dropout_ratio: int = 0.5, hidden_dim = None):
         super(RobertaQALSTM, self).__init__(config)
         self.config = config
-        self.hidden_dim = config.hidden_size ## 이거 확인
+        if hidden_dim is not None:
+            embedding_dim = hidden_dim
+        else:
+            embedding_dim = config.hidden_size
+        hidden_dim = config.hidden_size
         self.num_labels = config.num_labels
         
         self.roberta = RobertaModel.from_pretrained(model_name, config = config, add_pooling_layer=False)
+        self.lstm = nn.LSTM(input_size =embedding_dim , hidden_size = hidden_dim, num_layers = num_layer, dropout=dropout_ratio, bidirectional = True, batch_first = True)
 
-        # self.lstm = nn.LSTM(self.embedding_dim, hidden_dim // 2, num_layers = 1, bidirectional = True, batch_first = True)
-        # self.lstm = nn.LSTM(input_size = 1024, hidden_size = 1024, num_layers = 3, dropout=0.5, bidirectional = True, batch_first = True)
-        # self.dense_layer = nn.Linear(2048, 30, bias=True)
-
-        self.lstm = nn.LSTM(input_size =self.hidden_dim , hidden_size = self.hidden_dim , num_layers = 3, dropout=0.5, bidirectional = True, batch_first = True)
-        self.qa_outputs = nn.Linear(self.hidden_dim*2, config.num_labels)
+        self.qa_outputs = nn.Linear(embedding_dim*2, config.num_labels)
 
     def forward(
         self,
@@ -166,9 +171,6 @@ class RobertaQALSTM(RobertaPreTrainedModel):
         )
         # output[0] = last hidden state
         sequence_output = outputs[0]
-
-        # sequence_output = outputs[0]
-        # logits = self.qa_outputs(sequence_output)
 
         enc_hiddens, (last_hidden, last_cell) = self.lstm(sequence_output)
         logits = self.qa_outputs(enc_hiddens)

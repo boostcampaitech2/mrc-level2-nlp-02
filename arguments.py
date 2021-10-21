@@ -33,12 +33,6 @@ class ModelArguments:
             "help": "Custom models name in module of model"
         },    
     )
-    pooled_lalyer_start: Optional[int] = field(
-        default=-4,
-        metadata={
-            "help": "Index of start pooling layer (default: -4)"
-        },   
-    )
     wandb_tag: Optional[str] = field(
         default=None,
         metadata={

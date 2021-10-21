@@ -6,7 +6,6 @@ import importlib
 from typing import List, Callable, NoReturn, NewType, Any
 import dataclasses
 from datasets import load_metric, load_from_disk, Dataset, DatasetDict
-#from datasets import Value, Features, Sequence
 import torch
 
 from transformers import AutoConfig, AutoModelForQuestionAnswering, AutoTokenizer
@@ -91,11 +90,12 @@ def main():
         print(model_args.reader_custom_model)
         model = RD_custom_model(
             model_name=model_args.model_name_or_path, config=config,
-            layer_start=model_args.pooled_lalyer_start,
         )
         if training_args.output_dir == model_args.model_name_or_path :
             print(training_args.output_dir)
-            model.load_state_dict(torch.load(os.path.join(training_args.output_dir, "pytorch_model.pt")))
+            model.load_state_dict(
+                torch.load(os.path.join(training_args.output_dir, "pytorch_model.pt"))
+                )
     else :
         model = AutoModelForQuestionAnswering.from_pretrained(
             model_args.model_name_or_path,
@@ -373,7 +373,6 @@ def run_mrc(
         return metric.compute(predictions=p.predictions, references=p.label_ids)
     
     # Trainer 초기화
-    # training_args.eval_accumulation_steps = 30 # eval step시 oom 발생하면 사용
     trainer = QuestionAnsweringTrainer( 
         model=model,
         args=training_args,

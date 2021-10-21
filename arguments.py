@@ -90,3 +90,6 @@ class DataTrainingArguments:
     use_faiss: bool = field(
         default=False, metadata={"help": "Whether to build with faiss"}
     )
+    use_entity_enrichment: bool = field(
+        default=False, metadata={"help": "Whether to use entitiy enrichment"}
+    )

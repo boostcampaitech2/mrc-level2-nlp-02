@@ -29,6 +29,7 @@ from arguments import (
     DataTrainingArguments,
 )
 
+from preprocessor import Preprocessor
 import wandb
 
 logger = logging.getLogger(__name__)
@@ -104,6 +105,15 @@ def main():
     #         data_args,
     #     )
     
+    # Add Special token to ookenizer
+    special_tokens_dict = {'additional_special_tokens': ['[JPN]','[CHN]']}
+    num_added_toks = tokenizer.add_special_tokens(special_tokens_dict)  
+    model.resize_token_embeddings(len(tokenizer))
+
+    # Preprocessing
+    preprocessor = Preprocessor()
+    datasets = datasets.map(preprocessor)
+    
     if data_args.train_retrieval:
         retriever = SparseRetrieval(tokenize_fn=tokenizer.tokenize,
                                     data_path="../data",
@@ -116,7 +126,8 @@ def main():
     # do_train mrc model 혹은 do_eval mrc model
     if training_args.do_train or training_args.do_eval:
         run_mrc(data_args, training_args, model_args, datasets, tokenizer, model)
-        
+    
+
 # def run_sparse_embedding(datasets, topk):
 #     retriever = SparseRetrieval(tokenize_fn=tokenize,
 #                                 data_path="../data",

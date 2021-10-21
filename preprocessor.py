@@ -1,6 +1,7 @@
+
 import re
 
-class TextPreprocessor :
+class Preprocessor :
     def __init__(self, ) :
         ch_start_idx = int('4E00', 16)
         ch_end_idx = int('9FFF', 16)
@@ -13,15 +14,40 @@ class TextPreprocessor :
         self.unicode_comp2 = re.compile('[' + chr(8191) + '-' + chr(12288) + ']')
         self.unicode_comp3 = re.compile('[' + chr(55204) + '-' + chr(63743) + ']')
 
-    def preprocess_cq(self, txt) :
-        txt = self.remove_newline(txt)
-        txt = self.remove_special_unicode(txt)
-        txt = self.convert_foreign(txt)
-        return txt
+    def __call__(self, dataset) :
+        assert isinstance(dataset, dict)
+        context = dataset['context']
+        question = dataset['question']
+        answer = dataset['answers']
 
-    def preprocess_a(self, txt) :
-        txt = self.convert_foreign(txt)
-        return txt
+        context, answer = self.preprocess(context, answer)
+        question = self.convert_foreign(question)
+
+        dataset['context'] = context
+        dataset['question'] = question
+        dataset['answers'] = answer
+        return dataset
+
+    def preprocess_c(self, context) :
+        context = self.remove_newline(context)
+        context = self.remove_special_unicode(context)
+        context = self.convert_foreign(context)
+        return context
+
+    def preprocess(self, context, answer) :
+        answer_start, answer_text = answer['answer_start'][0], answer['text'][0]
+        context_prev = context[:answer_start]
+        context_next = context[answer_start + len(answer_text):]
+
+        context_prev = self.preprocess_c(context_prev)
+        context_next = self.preprocess_c(context_next)
+
+        answer_text = self.convert_foreign(answer_text)
+        answer_pos = len(context_prev)
+
+        context = context_prev + answer_text + context_next
+        answer = {'answer_start' : [answer_pos], 'text' : [answer_text]}
+        return context, answer
 
     def remove_newline(self, txt) :
         """[summary] : remove '\n' code
@@ -30,9 +56,9 @@ class TextPreprocessor :
         Returns:
             [str]: text which '\n' characters is removed
         """
-        txt = txt.replace('\n*' , '')
-        txt = txt.replace('\n#' , '')
-        txt = txt.replace('\n' , '')
+        txt = txt.replace(r'\n*' , '')
+        txt = txt.replace(r'\n#' , '')
+        txt = txt.replace(r'\n' , '')
         return txt
     
     def remove_special_unicode(self, txt) :

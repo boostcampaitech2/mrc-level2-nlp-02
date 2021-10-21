@@ -12,8 +12,9 @@ from tqdm.auto import tqdm
 from contextlib import contextmanager
 from typing import List, Tuple, NoReturn, Any, Optional, Union
 
-
 from sklearn.feature_extraction.text import TfidfVectorizer
+
+from preprocessor import Preprocessor
 
 from datasets import (
     Dataset,
@@ -66,6 +67,10 @@ class SparseRetrieval:
         self.contexts = list(
             dict.fromkeys([v["text"] for v in wiki.values()])
         )  # set 은 매번 순서가 바뀌므로
+        
+        preprocessor = Preprocessor()
+        self.contexts = list(map(preprocessor.preprocess_c, self.contexts))
+        
         print(f"Lengths of unique contexts : {len(self.contexts)}")
         self.ids = list(range(len(self.contexts)))
 

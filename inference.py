@@ -40,6 +40,7 @@ from arguments import (
     DataTrainingArguments,
 )
 
+from preprocessor import Preprocessor
 
 logger = logging.getLogger(__name__)
 
@@ -74,26 +75,26 @@ def main():
 
     datasets = load_from_disk(data_args.dataset_name)
     print(datasets)
-
     # AutoConfig를 이용하여 pretrained model 과 tokenizer를 불러옵니다.
     # argument로 원하는 모델 이름을 설정하면 옵션을 바꿀 수 있습니다.
     config = AutoConfig.from_pretrained(
-        model_args.config_name
-        if model_args.config_name
-        else model_args.model_name_or_path,
+        model_args.model_name_or_path
     )
     tokenizer = AutoTokenizer.from_pretrained(
-        model_args.tokenizer_name
-        if model_args.tokenizer_name
-        else model_args.model_name_or_path,
+        model_args.model_name_or_path,
         use_fast=True,
     )
+    print(len(tokenizer))
     model = AutoModelForQuestionAnswering.from_pretrained(
         model_args.model_name_or_path,
         from_tf=bool(".ckpt" in model_args.model_name_or_path),
         config=config,
     )
 
+    # Preprocessing
+    preprocessor = Preprocessor()
+    datasets = datasets.map(preprocessor)
+    
     # True일 경우 : run passage retrieval
     if data_args.eval_retrieval:
         datasets = run_sparse_retrieval(
@@ -106,7 +107,7 @@ def main():
     # eval or predict mrc model
     if training_args.do_eval or training_args.do_predict:
         run_mrc(data_args, training_args, model_args, datasets, tokenizer, model)
-
+    
 
 def run_sparse_retrieval(
     tokenize_fn: Callable[[str], List[str]],

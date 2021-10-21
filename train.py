@@ -109,7 +109,6 @@ def main():
     special_tokens_dict = {'additional_special_tokens': ['[JPN]','[CHN]']}
     num_added_toks = tokenizer.add_special_tokens(special_tokens_dict)  
     model.resize_token_embeddings(len(tokenizer))
-
     # Preprocessing
     preprocessor = Preprocessor()
     datasets = datasets.map(preprocessor)

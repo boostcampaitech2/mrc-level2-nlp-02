@@ -27,6 +27,12 @@ class ModelArguments:
         },
     )
     # # # 추가
+    reader_type: str = field(
+        default="extraction",
+        metadata={
+            "help": "MRC model type (Extraction-based or Generation-based)"
+        },
+    )
     reader_custom_model: Optional[str] = field(
         default=None,
         metadata={

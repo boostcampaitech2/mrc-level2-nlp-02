@@ -3,5 +3,6 @@ models/**
 outputs/**
 wandb/**
 runs/**
+eval/*
 
 running.sh

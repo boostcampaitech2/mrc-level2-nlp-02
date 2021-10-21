@@ -6,14 +6,17 @@ Open-Domain Question Answering 을 수행하는 inference 코드 입니다.
 
 
 import logging
-import os
-import sys
+import os, sys
 from typing import Callable, List, Dict, NoReturn, Tuple
 import importlib
+import collections
+import json
 
 import numpy as np
 import torch
+import nltk
 
+from torch.utils.data import DataLoader
 from datasets import (
     load_metric,
     load_from_disk,
@@ -24,13 +27,18 @@ from datasets import (
     DatasetDict,
 )
 
-from transformers import AutoConfig, AutoModelForQuestionAnswering, AutoTokenizer
+from transformers import (
+    AutoConfig, AutoModelForQuestionAnswering, AutoModelForSeq2SeqLM, AutoTokenizer
+)
 
 from transformers import (
     DataCollatorWithPadding,
+    DataCollatorForSeq2Seq,
     EvalPrediction,
     HfArgumentParser,
     TrainingArguments,
+    Seq2SeqTrainer,
+    Seq2SeqTrainingArguments,
     set_seed,
 )
 
@@ -47,6 +55,7 @@ import wandb
 
 
 logger = logging.getLogger(__name__)
+nltk.download('punkt')
 
 
 def main():
@@ -55,7 +64,8 @@ def main():
     
     # dataclass를 통해 변수를 만들고 HfArgumentParser를 통해 합쳐서 사용
     parser = HfArgumentParser(
-        (ModelArguments, DataTrainingArguments, TrainingArguments)
+        (ModelArguments, DataTrainingArguments,
+        TrainingArguments if ModelArguments.reader_type == 'extraction' else Seq2SeqTrainingArguments)
     )
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
 
@@ -63,6 +73,9 @@ def main():
 
     print(f"model is from {model_args.model_name_or_path}")
     print(f"data is from {data_args.dataset_name}")
+
+    if model_args.reader_type == 'generation':
+        training_args.predict_with_generate=True
 
     # logging 설정
     logging.basicConfig(
@@ -103,8 +116,14 @@ def main():
         if training_args.output_dir == model_args.model_name_or_path :
             print(training_args.output_dir)
             model.load_state_dict(torch.load(os.path.join(training_args.output_dir, "pytorch_model.pt")))
-    else :
+    elif model_args.reader_type == 'extraction':
         model = AutoModelForQuestionAnswering.from_pretrained(
+            model_args.model_name_or_path,
+            from_tf=bool(".ckpt" in model_args.model_name_or_path),
+            config=config,
+        )
+    elif model_args.reader_type == 'generation':
+        model = AutoModelForSeq2SeqLM.from_pretrained(
             model_args.model_name_or_path,
             from_tf=bool(".ckpt" in model_args.model_name_or_path),
             config=config,
@@ -215,7 +234,7 @@ def run_mrc(
     )
 
     # Validation preprocessing / 전처리를 진행합니다.
-    def prepare_validation_features(examples):
+    def prepare_validation_features_extraction(examples):
         # truncation과 padding(length가 짧을때만)을 통해 toknization을 진행하며, stride를 이용하여 overflow를 유지합니다.
         # 각 example들은 이전의 context와 조금씩 겹치게됩니다.
         tokenized_examples = tokenizer(
@@ -253,11 +272,27 @@ def run_mrc(
             ]
         return tokenized_examples
 
+    def prepare_validation_features_generation(examples):
+        inputs = [f"question: {q}  context: {c} </s>" for q, c in zip(examples[question_column_name], examples[context_column_name])]
+        tokenized_examples = tokenizer(
+            inputs,
+            truncation=True, # second sequence 없음 (only second 옵션시 에러 발생)
+            max_length=max_seq_length,
+            return_token_type_ids=False, # roberta모델을 사용할 경우 False, bert를 사용할 경우 True로 표기해야합니다.
+            padding="max_length" if data_args.pad_to_max_length else True,
+            # return_tensors='pt', # map 쓰려면 pt 반환하면 에러 발생 (모두 list 여야 함)
+        )
+        tokenized_examples["example_id"] = []
+        for i in range(len(inputs)):
+            tokenized_examples["example_id"].append(examples["id"][i])
+
+        return tokenized_examples
+
     eval_dataset = datasets["validation"]
 
     # Validation Feature 생성
     eval_dataset = eval_dataset.map(
-        prepare_validation_features,
+        prepare_validation_features_extraction if model_args.reader_type == 'extraction' else prepare_validation_features_generation,
         batched=True,
         num_proc=data_args.preprocessing_num_workers,
         remove_columns=column_names,
@@ -267,12 +302,17 @@ def run_mrc(
     # Data collator
     # flag가 True이면 이미 max length로 padding된 상태입니다.
     # 그렇지 않다면 data collator에서 padding을 진행해야합니다.
-    data_collator = DataCollatorWithPadding(
-        tokenizer, pad_to_multiple_of=8 if training_args.fp16 else None
-    )
+    if model_args.reader_type == 'extraction':
+        data_collator = DataCollatorWithPadding(
+            tokenizer, pad_to_multiple_of=8 if training_args.fp16 else None
+        )
+    elif model_args.reader_type == 'generation':
+        data_collator = DataCollatorForSeq2Seq(
+            tokenizer, label_pad_token_id=tokenizer.pad_token_id, pad_to_multiple_of=8 if training_args.fp16 else None
+        )
 
     # Post-processing:
-    def post_processing_function(
+    def post_processing_function_extraction(
         examples,
         features,
         predictions: Tuple[np.ndarray, np.ndarray],
@@ -302,12 +342,35 @@ def run_mrc(
             return EvalPrediction(
                 predictions=formatted_predictions, label_ids=references
             )
+    
+    def post_processing_function_generation(predictions):
+        preds = [pred.strip() for pred in predictions]
+        preds = ["\n".join(nltk.sent_tokenize(pred)) for pred in preds]
+        return preds
 
     metric = load_metric("squad")
 
-    def compute_metrics(p: EvalPrediction) -> Dict:
+    def compute_metrics_extraction(p: EvalPrediction) -> Dict:
         return metric.compute(predictions=p.predictions, references=p.label_ids)
     
+    def compute_metrics_generation(eval_preds):
+        preds, labels = eval_preds
+        if isinstance(preds, tuple):
+            preds = preds[0]
+
+        decoded_preds = tokenizer.batch_decode(preds, skip_special_tokens=True)
+        # decoded_labels은 rouge metric을 위한 것이며, f1/em을 구할 때 사용되지 않음
+        decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
+
+        # 간단한 post-processing
+        decoded_preds, decoded_labels = post_processing_function_generation(decoded_preds, decoded_labels)
+
+        formatted_predictions = [{"id": ex["id"], "prediction_text": decoded_preds[i]} for i, ex in enumerate(datasets["validation"].select(range(16)))]
+        references = [{"id": ex["id"], "answers": ex["answers"]} for ex in datasets["validation"].select(range(16))] # 16 == max_val_samples
+
+        result = metric.compute(predictions=formatted_predictions, references=references)
+        return result
+
     if training_args.do_eval :
         wandb_name = model_args.model_name_or_path
         wandb_name += '-' + model_args.wandb_tag if model_args.wandb_tag is not None else ''
@@ -322,25 +385,66 @@ def run_mrc(
 
     print("init trainer...")
     # Trainer 초기화
-    trainer = QuestionAnsweringTrainer(
-        model=model,
-        args=training_args,
-        train_dataset=None,
-        eval_dataset=eval_dataset,
-        eval_examples=datasets["validation"],
-        tokenizer=tokenizer,
-        data_collator=data_collator,
-        post_process_function=post_processing_function,
-        compute_metrics=compute_metrics,
-    )
+    if model_args.reader_type == 'extraction':
+        trainer = QuestionAnsweringTrainer(
+            model=model,
+            args=training_args,
+            train_dataset=None,
+            eval_dataset=eval_dataset,
+            eval_examples=datasets["validation"],
+            tokenizer=tokenizer,
+            data_collator=data_collator,
+            post_process_function=post_processing_function_extraction,
+            compute_metrics=compute_metrics_extraction,
+        )
+    elif model_args.reader_type == 'generation':
+        trainer = Seq2SeqTrainer(
+            model=model,
+            args=training_args,
+            train_dataset=None,
+            eval_dataset=eval_dataset,
+            tokenizer=tokenizer,
+            data_collator=data_collator,
+            compute_metrics=compute_metrics_generation,
+        )
 
     logger.info("*** Evaluate ***")
 
     #### eval dataset & eval example - predictions.json 생성됨
     if training_args.do_predict:
-        predictions = trainer.predict(
-            test_dataset=eval_dataset, test_examples=datasets["validation"]
-        )
+        if model_args.reader_type == 'extraction':
+            predictions = trainer.predict(
+                test_dataset=eval_dataset, test_examples=datasets["validation"]
+            )
+        elif model_args.reader_type == 'generation':
+            test_dataloader = DataLoader(
+                eval_dataset,
+                batch_size=4,
+                collate_fn=data_collator,
+            )
+            id_index = 0
+            test_batch_size = 4
+            all_predictions = collections.OrderedDict()
+            for batch in test_dataloader:
+                predictions = model.generate(
+                    input_ids=batch['input_ids'].cuda(),
+                    attention_mask=batch['attention_mask'].cuda(),
+                    do_sample=False,
+                )
+
+                decoded_preds = tokenizer.batch_decode(predictions, skip_special_tokens=True)
+                decoded_preds = post_processing_function_generation(decoded_preds)
+                preds_id = datasets['validation']['id'][id_index:id_index+test_batch_size]
+                all_predictions.update(zip(preds_id, decoded_preds))
+
+                id_index += test_batch_size
+            # prediction_file = './predictions/predictions_generation.json'
+            prediction_file = os.path.join(training_args.output_dir, 'predictions_generation.json')
+            logger.info(f"Saving predictions to {prediction_file}.")
+            with open(prediction_file, "w", encoding="utf-8") as writer:
+                writer.write(
+                    json.dumps(all_predictions, indent=4, ensure_ascii=False) + "\n"
+                )
 
         # predictions.json 은 postprocess_qa_predictions() 호출시 이미 저장됩니다.
         print(

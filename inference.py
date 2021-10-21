@@ -99,7 +99,6 @@ def main():
         print(model_args.reader_custom_model)
         model = RD_custom_model(
             model_name=model_args.model_name_or_path, config=config,
-            layer_start=model_args.pooled_lalyer_start,
         )
         if training_args.output_dir == model_args.model_name_or_path :
             print(training_args.output_dir)

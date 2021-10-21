@@ -23,12 +23,12 @@ from tokenizers.models import WordPiece
 from utils_qa import postprocess_qa_predictions, check_no_error
 from trainer_qa import QuestionAnsweringTrainer
 from retrieval import SparseRetrieval
+from preprocessing import preprocessing_data
 
 from arguments import (
     ModelArguments,
     DataTrainingArguments,
 )
-
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +63,11 @@ def main():
     # 모델을 초기화하기 전에 난수를 고정합니다.
     set_seed(training_args.seed)
     
+    #데이터셋을 불러옵니다.
     datasets = load_from_disk(data_args.dataset_name)
+
+    #기본 전처리를 진행합니다.
+    datasets = preprocessing_data(data = datasets, do_train=training_args.do_train, do_eval=training_args.do_eval)
     print(datasets)
 
     # AutoConfig를 이용하여 pretrained model 과 tokenizer를 불러옵니다.

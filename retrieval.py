@@ -21,6 +21,7 @@ from datasets import (
     concatenate_datasets,
 )
 
+from preprocessing import preprocessing_data
 
 @contextmanager
 def timer(name):
@@ -67,6 +68,10 @@ class SparseRetrieval:
             dict.fromkeys([v["text"] for v in wiki.values()])
         )  # set 은 매번 순서가 바뀌므로
         print(f"Lengths of unique contexts : {len(self.contexts)}")
+
+        #corpus wiki 데이터를 전처리 합니다.
+        self.contexts = preprocessing_data(data = self.contexts)
+
         self.ids = list(range(len(self.contexts)))
 
         # Transform by vectorizer

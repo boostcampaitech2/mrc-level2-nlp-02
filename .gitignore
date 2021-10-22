@@ -1,2 +1,8 @@
+__pycache__/**
+wandb/**
+runs/**
+models/**
+outputs/**
+
 *.ipynb
 *.sh

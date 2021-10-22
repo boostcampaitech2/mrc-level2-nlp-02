@@ -405,10 +405,16 @@ class SparseRetrieval:
 
 class DenseRetrieval:
     def __init__(
-        self, args, data_path: str, num_neg: int, tokenizer, p_encoder, q_encoder
+        self,
+        args,
+        data_path: str,
+        num_neg: int,
+        tokenizer,
+        p_encoder,
+        q_encoder,
+        save_dir: str,
     ):
         """[summary] : encoder를 활용해 query와 passage를 embedding하고 embedding된 vector를 유사도 검색에 활용
-
         Args:
             args : encoder를 train할 때 필요한 arguments
             data_path : 학습을 위한 MRC dataset의 path
@@ -416,6 +422,7 @@ class DenseRetrieval:
             tokenizer : Pretrained tokenizer
             p_encoder : query를 embedding 할 때 사용할 모델
             q_encoder : passage를 embedding 할 때 사용할 모델
+            save_dir : encoder 모델을 저장할 디렉토리 path
         """
         self.args = args
 
@@ -431,13 +438,73 @@ class DenseRetrieval:
         self.train_dataloader = None
         self.valid_dataloader = None
 
-        self.prepare_negative(num_neg=num_neg)
+        self.save_dir = save_dir
+
+        if num_neg != 0:
+            self.prepare_negative(num_neg=num_neg)
+        else:
+            self.prepare_in_batch()
+
+    def prepare_in_batch(self, tokenizer=None):
+        """
+        [summary] : in_batch negative sampling 방식으로 학습한 dataset 구성
+        """
+        print("prepare in_batch dataset !!!")
+        if tokenizer is None:
+            tokenizer = self.tokenizer
+
+        q_seqs = tokenizer(
+            self.q_dataset,
+            padding="max_length",
+            truncation=True,
+            return_tensors="pt",
+            # return_token_type_ids=False,
+        )
+
+        p_seqs = tokenizer(
+            self.p_dataset,
+            padding="max_length",
+            truncation=True,
+            return_tensors="pt",
+            # return_token_type_ids=False,
+        )
+
+        train_dataset = TensorDataset(
+            p_seqs["input_ids"],
+            p_seqs["attention_mask"],
+            p_seqs["token_type_ids"],
+            q_seqs["input_ids"],
+            q_seqs["attention_mask"],
+            q_seqs["token_type_ids"],
+        )
+
+        self.train_dataloader = DataLoader(
+            train_dataset,
+            shuffle=True,
+            batch_size=self.args.per_device_train_batch_size,
+        )
+
+        valid_seqs = tokenizer(
+            self.p_dataset,
+            padding="max_length",
+            truncation=True,
+            return_tensors="pt",
+            # return_token_type_ids=False,
+        )
+        valid_dataset = TensorDataset(
+            valid_seqs["input_ids"],
+            valid_seqs["attention_mask"],
+            valid_seqs["token_type_ids"],
+        )
+        self.valid_dataloader = DataLoader(
+            valid_dataset, batch_size=self.args.per_device_train_batch_size
+        )
 
     def prepare_negative(self, num_neg=3, tokenizer=None):
         """
         [summary] : Negative Sampling을 통해 dataset을 구성
         """
-
+        print("prepare negative sampling dataset !!!")
         if tokenizer is None:
             tokenizer = self.tokenizer
 
@@ -488,6 +555,7 @@ class DenseRetrieval:
             train_dataset,
             shuffle=True,
             batch_size=self.args.per_device_train_batch_size,
+            drop_last=True,
         )
 
         valid_seqs = tokenizer(
@@ -505,7 +573,107 @@ class DenseRetrieval:
             valid_dataset, batch_size=self.args.per_device_train_batch_size
         )
 
+    def make_wiki_embedding(self, batch_size, args=None):
+        if args is None:
+            args = self.args
+
+        df = pd.read_json("/opt/ml/data/wikipedia_documents.json").transpose()
+        wiki_texts = list(df["text"])
+        print(f"wiki text size : {len(wiki_texts)}")
+
+        wiki_seqs = self.tokenizer(
+            wiki_texts, padding="max_length", truncation=True, return_tensors="pt"
+        ).to(args.device)
+
+        wiki_dataset = TensorDataset(
+            wiki_seqs["input_ids"],
+            wiki_seqs["attention_mask"],
+            wiki_seqs["token_type_ids"],
+        )
+
+        wiki_dataloader = DataLoader(wiki_dataset, batch_size=batch_size)
+
+        self.p_encoder.to(args.device)
+
+        with torch.no_grad():
+            self.p_encoder.eval()
+
+            p_embs = []
+
+            for batch in tqdm(wiki_dataloader, unit="batch"):
+                batch = tuple(t.to(args.device) for t in batch)
+                wiki_inputs = {
+                    "input_ids": batch[0],
+                    "attention_mask": batch[1],
+                    "token_type_ids": batch[2],
+                }
+                p_emb = self.p_encoder(**wiki_inputs).to("cpu")
+                p_embs.append(p_emb)
+
+        p_embs = torch.cat(p_embs, dim=0).numpy()
+        print(f"wiki passage embedding shape:{p_embs.shape}")
+        print("\nMake wiki embedding csv file !!!")
+
+        emb_df = pd.DataFrame(p_embs)
+
+        emb_df.to_csv("/opt/ml/data/wiki_embedding.csv", index=False)
+
+    def save_encoder(self):
+        """
+        [summary] : 학습한 encoder의 state_dict를 지정한 폴더에 저장
+        """
+        if self.num_neg != 0:
+            p_encoder_path = os.path.join(self.save_dir, "passage")
+            q_encoder_path = os.path.join(self.save_dir, "query")
+
+            os.makedirs(p_encoder_path, exist_ok=True)
+            os.makedirs(q_encoder_path, exist_ok=True)
+
+            self.p_encoder.save_pretrained(p_encoder_path)
+            self.q_encoder.save_pretrained(q_encoder_path)
+        else:
+            p_encoder_path = os.path.join(self.save_dir, "passage_in_batch")
+            q_encoder_path = os.path.join(self.save_dir, "query_in_batch")
+
+            os.makedirs(p_encoder_path, exist_ok=True)
+            os.makedirs(q_encoder_path, exist_ok=True)
+
+            self.p_encoder.save_pretrained(p_encoder_path)
+            self.q_encoder.save_pretrained(q_encoder_path)
+
+    def load_encoder(self):
+        """
+        [summary] : 학습된 encoder가 존재한다며 load를 하고 존재하지 않으면 train 시킨다.
+        """
+        if self.num_neg != 0:
+            if os.path.isdir(os.path.join(self.save_dir, "passage")) and os.path.isdir(
+                os.path.join(self.save_dir, "query")
+            ):
+                print("loading encoder !!!")
+                self.p_encoder = self.p_encoder.from_pretrained(
+                    os.path.join(self.save_dir, "passage")
+                )
+                self.q_encoder = self.q_encoder.from_pretrained(
+                    os.path.join(self.save_dir, "query")
+                )
+            else:
+                self.train()
+        else:
+            if os.path.isdir(
+                os.path.join(self.save_dir, "passage_in_batch")
+            ) and os.path.isdir(os.path.join(self.save_dir, "query_in_batch")):
+                print("loading in_batch encoder !!!")
+                self.p_encoder = self.p_encoder.from_pretrained(
+                    os.path.join(self.save_dir, "passage_in_batch")
+                )
+                self.q_encoder = self.q_encoder.from_pretrained(
+                    os.path.join(self.save_dir, "query_in_batch")
+                )
+            else:
+                self.train_in_batch()
+
     def train(self, args=None):
+        print("training by negative sampling data !!!")
         if args is None:
             args = self.args
         batch_size = args.per_device_train_batch_size
@@ -568,6 +736,7 @@ class DenseRetrieval:
         for _ in train_iterator:
             with tqdm(self.train_dataloader, unit="batch") as tepoch:
                 for batch in tepoch:
+
                     self.p_encoder.train()
                     self.q_encoder.train()
 
@@ -598,7 +767,7 @@ class DenseRetrieval:
                     sim_scores = F.log_softmax(sim_scores, dim=1)
 
                     loss = F.nll_loss(sim_scores, targets)
-                    tepoch.set_postfix(loss=f"{str(loss.item())}")
+                    tepoch.set_postfix(loss=f"{loss.item():.3f}")
 
                     loss.backward()
                     optimizer.step()
@@ -613,6 +782,126 @@ class DenseRetrieval:
 
                     del p_inputs, q_inputs
 
+        # self.save_encoder()
+        torch.save(p_encoder.state_dict(), "./encoders/p_encoder.pt")
+        torch.save(q_encoder.state_dict(), "./encoders/q_encoder.pt")
+
+    def train_in_batch(self, args=None):
+        print("training by in_batch negative sampling data !!!")
+        if args is None:
+            args = self.args
+        batch_size = args.per_device_train_batch_size
+
+        no_decay = ["bias", "LayerNorm.weight"]
+        optimizer_grouped_parameters = [
+            {
+                "params": [
+                    p
+                    for n, p in self.p_encoder.named_parameters()
+                    if not any(nd in n for nd in no_decay)
+                ],
+                "weight_decay": args.weight_decay,
+            },
+            {
+                "params": [
+                    p
+                    for n, p in self.p_encoder.named_parameters()
+                    if any(nd in n for nd in no_decay)
+                ],
+                "weight_decay": 0.0,
+            },
+            {
+                "params": [
+                    p
+                    for n, p in self.q_encoder.named_parameters()
+                    if not any(nd in n for nd in no_decay)
+                ],
+                "weight_decay": args.weight_decay,
+            },
+            {
+                "params": [
+                    p
+                    for n, p in self.q_encoder.named_parameters()
+                    if any(nd in n for nd in no_decay)
+                ],
+                "weight_decay": 0.0,
+            },
+        ]
+        optimizer = AdamW(
+            optimizer_grouped_parameters, lr=args.learning_rate, eps=args.adam_epsilon
+        )
+        t_total = (
+            len(self.train_dataloader)
+            // args.gradient_accumulation_steps
+            * args.num_train_epochs
+        )
+        scheduler = get_linear_schedule_with_warmup(
+            optimizer, num_warmup_steps=args.warmup_steps, num_training_steps=t_total
+        )
+
+        global_step = 0
+
+        self.p_encoder.zero_grad()
+        self.q_encoder.zero_grad()
+        torch.cuda.empty_cache()
+
+        train_iterator = tqdm(range(int(args.num_train_epochs)), desc="Epoch")
+
+        for _ in train_iterator:
+            with tqdm(self.train_dataloader, unit="batch") as tepoch:
+                for batch in tepoch:
+
+                    self.p_encoder.train()
+                    self.q_encoder.train()
+
+                    targets = (
+                        torch.arange(0, args.per_device_train_batch_size)
+                        .long()
+                        .to(args.device)
+                    )
+
+                    p_inputs = {
+                        "input_ids": batch[0].to(args.device),
+                        "attention_mask": batch[1].to(args.device),
+                        "token_type_ids": batch[2].to(args.device),
+                    }
+
+                    q_inputs = {
+                        "input_ids": batch[3].to(args.device),
+                        "attention_mask": batch[4].to(args.device),
+                        "token_type_ids": batch[5].to(args.device),
+                    }
+
+                    p_outputs = self.p_encoder(**p_inputs)
+                    q_outputs = self.q_encoder(**q_inputs)
+
+                    sim_scores = torch.matmul(
+                        q_outputs, torch.transpose(p_outputs, 0, 1)
+                    )
+
+                    sim_scores = F.log_softmax(sim_scores, dim=1)
+
+                    loss = F.nll_loss(sim_scores, targets)
+
+                    tepoch.set_postfix(loss=f"{loss.item():.3f}")
+
+                    loss.backward()
+                    optimizer.step()
+                    scheduler.step()
+
+                    self.p_encoder.zero_grad()
+                    self.q_encoder.zero_grad()
+
+                    global_step += 1
+
+                    torch.cuda.empty_cache()
+
+                    del p_inputs, q_inputs
+
+        self.save_encoder()
+        # torch.save(p_encoder.state_dict(), "./encoders/p_encoder_in_batch.pt")
+        # torch.save(q_encoder.state_dict(), "./encoders/q_encoder_in_batch.pt")
+
     def get_relevant_doc(
         self,
         query: str,
@@ -622,11 +911,61 @@ class DenseRetrieval:
         q_encoder=None,
     ) -> Tuple[List, List]:
         """[summary] : query가 1개 일 때 top-k개의 passage를 선택한다.
-
         Args:
             qurey : 1개의 질문
             k : 선택할 passage의 개수
         """
+        if args is None:
+            args = self.args
+
+        if p_encoder is None:
+            p_encoder = self.p_encoder.to(args.device)
+
+        if q_encoder is None:
+            q_encoder = self.q_encoder.to(args.device)
+
+        with torch.no_grad():
+            p_encoder.eval()
+            q_encoder.eval()
+
+            q_seq = self.tokenizer(
+                [query],
+                padding=True,
+                truncation=True,
+                return_tensors="pt",
+                # return_token_type_ids=False,
+            ).to(args.device)
+            q_emb = q_encoder(**q_seq).to("cpu")
+
+            p_embs = []
+
+            for batch in tqdm(self.valid_dataloader):
+                batch = tuple(t.to(args.device) for t in batch)
+                p_inputs = {
+                    "input_ids": batch[0],
+                    "attention_mask": batch[1],
+                    "token_type_ids": batch[2],
+                }
+
+                p_emb = p_encoder(**p_inputs).to("cpu")
+                p_embs.append(p_emb)
+
+        p_embs = torch.stack(p_embs, dim=0).view(
+            (len(self.valid_dataloader.dataset), -1)
+        )
+
+        dot_prod_scores = torch.matmul(q_emb, torch.transpose(p_embs, 0, 1))
+        rank = torch.argsort(dot_prod_scores, dim=1, descending=True).squeeze()
+        return dot_prod_scores.squeeze(), rank[:k]
+
+    def get_relevant_doc_bulk(
+        self,
+        queries: List,
+        k: Optional[int] = 1,
+        args=None,
+        p_encoder=None,
+        q_encoder=None,
+    ) -> Tuple[List, List]:
         if args is None:
             args = self.args
 
@@ -640,10 +979,14 @@ class DenseRetrieval:
             p_encoder.eval()
             q_encoder.eval()
 
-            q_seq = self.tokenizer(
-                [query], padding=True, truncation=True, return_tensors="pt"
+            q_seqs = self.tokenizer(
+                queries,
+                padding=True,
+                truncation=True,
+                return_tensors="pt",
+                return_token_type_ids=False,
             ).to(args.device)
-            q_emb = q_encoder(**q_seq).to("cpu")
+            q_embs = q_encoder(**q_seqs).to("cpu")  # (num_queries, emb_dim)
 
             p_embs = []
 
@@ -653,23 +996,19 @@ class DenseRetrieval:
 
                 p_emb = p_encoder(**p_inputs).to("cpu")
                 p_embs.append(p_emb)
+        p_embs = torch.stack(p_embs, dim=0).view(len(self.valid_dataloader.dataset), -1)
 
-        p_embs = torch.stack(p_embs, dim=0).view((len(self.valid_dataloader), -1))
+        doc_scores = []
+        doc_indices = []
+        for i in range(len(queries)):
+            dot_pord_scores = torch.matmul(
+                q_embs[i].unsqueeze(0), torch.transpose(p_embs, 0, 1)
+            )  # (1, num_passage)
+            rank = torch.argsort(dot_pord_scores, dim=1, descending=True).squeeze()
+            doc_scores.append(dot_pord_scores.squeeze()[:k])
+            doc_indices.append(rank[:k])
 
-        dot_prod_scores = torch.matmul(q_emb, torch.transpose(p_embs, 0, 1))
-        rank = torch.argsort(dot_prod_scores, dim=1, descending=True).squeeze()
-
-        return rank[:k]
-
-    def get_relevant_doc_bulk(
-        self,
-        qureies: List,
-        k: Optional[int] = 1,
-        args=None,
-        p_encoder=None,
-        q_encoder=None,
-    ) -> Tuple[List, List]:
-        pass
+        return doc_scores, doc_indices
 
 
 # if __name__ == "__main__":
@@ -764,42 +1103,49 @@ if __name__ == "__main__":
         "--context_path", metavar="wikipedia_documents", type=str, help=""
     )
     parser.add_argument("--use_faiss", metavar=False, type=bool, help="")
+    parser.add_argument("--save_dir", metavar="./encoders", type=str, help="")
+    parser.add_argument("--num_neg", default=0, type=int, help="")
 
     args = parser.parse_args()
+
+    set_seed(42)
+
     dense_args = TrainingArguments(
         output_dir="dense_retireval",
         evaluation_strategy="epoch",
-        learning_rate=3e-4,
-        per_device_train_batch_size=2,
-        per_device_eval_batch_size=2,
-        num_train_epochs=2,
+        learning_rate=5e-5,
+        per_device_train_batch_size=4,
+        per_device_eval_batch_size=4,
+        num_train_epochs=3,
         weight_decay=0.01,
     )
 
-    model_checkpoint = args.model_name_or_path
+    model_checkpoint = args.model_name_or_path  # roberta-base
 
     tokenizer = AutoTokenizer.from_pretrained(model_checkpoint)
-    p_encoder = RobertaEncoder.from_pretrained(model_checkpoint).to(dense_args.device)
-    q_encoder = RobertaEncoder.from_pretrained(model_checkpoint).to(dense_args.device)
+    p_encoder = BertEncoder.from_pretrained(model_checkpoint).to(dense_args.device)
+    q_encoder = BertEncoder.from_pretrained(model_checkpoint).to(dense_args.device)
 
     dense_retriever = DenseRetrieval(
         args=dense_args,
         data_path=args.dataset_name,
-        num_neg=3,
+        num_neg=args.num_neg,
         tokenizer=tokenizer,
         p_encoder=p_encoder,
         q_encoder=q_encoder,
+        save_dir=args.save_dir,
     )
 
-    dense_retriever.train()
+    dense_retriever.load_encoder()
+    # dense_retriever.make_wiki_embedding(64)
 
-    query = "대통령을 포함한 미국의 행정부 견제권을 갖는 국가 기관은?"
+    # query = "태어난 지 얼마 안 된 웨이게오쿠스쿠스는 무엇이 달라지는가?"
 
-    results = dense_retriever.get_relevant_doc(query, k=5)
+    # scores, results = dense_retriever.get_relevant_doc(query, k=5)
 
-    print(f"[Search Query] {query}\n")
+    # print(f"[Search Query] {query}\n")
 
-    indices = results.tolist()
-    for i, idx in enumerate(indices):
-        print(f"Top-{i + 1}th Passage (Index {idx})")
-        print(dense_retriever.p_dataset["context"][idx])
+    # indices = results.tolist()
+    # for i, idx in enumerate(indices):
+    #     print(f"\nTop-{i + 1}th Passage (Index {idx}, Score : {scores[idx]})")
+    #     print(dense_retriever.p_dataset[idx])

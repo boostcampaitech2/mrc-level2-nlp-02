@@ -30,6 +30,7 @@ from arguments import (
 )
 
 from preprocessor import Preprocessor
+from augmentation import SpanAugmentation
 import wandb
 
 logger = logging.getLogger(__name__)
@@ -71,14 +72,16 @@ def main():
     # AutoConfig를 이용하여 pretrained model 과 tokenizer를 불러옵니다.
     # argument로 원하는 모델 이름을 설정하면 옵션을 바꿀 수 있습니다.
     config = AutoConfig.from_pretrained(
-        model_args.config_name
-        if model_args.config_name is not None
-        else model_args.model_name_or_path,
+        model_args.model_name_or_path
+        #model_args.config_name
+        #if model_args.config_name is not None
+        #else model_args.model_name_or_path,
     )
     tokenizer = AutoTokenizer.from_pretrained(
-        model_args.tokenizer_name
-        if model_args.tokenizer_name is not None
-        else model_args.model_name_or_path,
+        model_args.model_name_or_path,
+        #model_args.tokenizer_name
+        #if model_args.tokenizer_name is not None
+        #else model_args.model_name_or_path,
         # 'use_fast' argument를 True로 설정할 경우 rust로 구현된 tokenizer를 사용할 수 있습니다.
         # False로 설정할 경우 python으로 구현된 tokenizer를 사용할 수 있으며,
         # rust version이 비교적 속도가 빠릅니다.
@@ -115,8 +118,7 @@ def main():
         retriever.get_sparse_BM25()
         #datasets = run_sparse_embedding(datasets, topk=data_args.top_k_retrieval)
     
-    
-    # Add Special token to ookenizer
+    # Add Special token to tokenizer
     special_tokens_dict = {'additional_special_tokens': ['[CHN]']}
     num_added_toks = tokenizer.add_special_tokens(special_tokens_dict)  
     model.resize_token_embeddings(len(tokenizer))

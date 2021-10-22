@@ -2,15 +2,9 @@ import re
 
 class Preprocessor :
     def __init__(self, ) :
-        ch_start_idx = int('4E00', 16)
-        ch_end_idx = int('9FFF', 16)
-        jp_start_idx = int('3040', 16)
-        jp_end_idx = int('30FF', 16)
-
-        self.ch_sub = re.compile(r'\([' + chr(ch_start_idx) + '-' + chr(ch_end_idx) + chr(jp_start_idx) + '-' + chr(jp_end_idx) + ' ]+\)')
-        self.unicode_comp1 = re.compile('[' + chr(0) + '-' + chr(31) + ']')
-        self.unicode_comp2 = re.compile('[' + chr(8191) + '-' + chr(12288) + ']')
-        self.unicode_comp3 = re.compile('[' + chr(55204) + '-' + chr(63743) + ']')
+        self.bracket_comp = re.compile(r'\([^)]*\)')
+        self.chn_comp = re.compile('[一-鿕ぁ-ヿ]+')
+        self.unicode_comp = re.compile('[' + chr(0) + '-' + chr(31) + chr(8191) + '-' + chr(12288) + chr(55204) + '-' + chr(63743) + ']')
 
     def preprocess_train(self, dataset) :
         assert isinstance(dataset, dict)
@@ -62,11 +56,11 @@ class Preprocessor :
         Returns:
             [str]: text which '\n' characters is removed
         """
-        txt = txt.replace('</br>', '')
-        txt = txt.replace(r'\n**' , '')
-        txt = txt.replace(r'\n*' , '')
-        txt = txt.replace(r'\n#' , '')
-        txt = txt.replace(r'\n' , '')
+        txt = txt.replace('</br>', ' ')
+        txt = txt.replace('\n*' , ' ')
+        txt = txt.replace('\n#' , ' ')
+        txt = txt.replace('\n' , ' ')
+        txt = re.sub('\s+' , ' ', txt)
         return txt
     
     def remove_special_unicode(self, txt) :
@@ -76,20 +70,21 @@ class Preprocessor :
         Returns:
             [str]: Text which speical unicode is removed 
         """
-        txt = self.unicode_comp1.sub(' ', txt)
-        txt = self.unicode_comp2.sub(' ', txt)
-        txt = self.unicode_comp3.sub(' ', txt)
+        txt = self.unicode_comp.sub(' ', txt)
         txt = re.sub('\s+' , ' ', txt)
         return txt
 
     def convert_foreign(self, txt) :
-        """[summary] : convert chinese word to [CHN] token, and japanese word to [JPN] token
-        Args:
-            txt ([str]): question, context and answer
-        Returns:
-            [str]: converted txt
-        """
-        txt = self.ch_sub.sub('[CHN]', txt)
+        bracket_list = self.bracket_comp.finditer(txt)
+        prev_brackets = []
+        for bracket in bracket_list :
+            start_idx, end_idx = bracket.start(), bracket.end()
+            prev_brackets.append(txt[start_idx:end_idx])
+
+        for bracket in prev_brackets :
+            cur_bracket = self.chn_comp.sub('[CHN]', bracket)
+            if bracket == cur_bracket :
+                continue
+            txt = txt.replace(bracket, cur_bracket)
+
         return txt
-
-

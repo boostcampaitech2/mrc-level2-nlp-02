@@ -110,6 +110,12 @@ def main():
             training_args,
             data_args,
         )
+    elif data_args.eval_retrieval == 'elastic_dense':
+        datasets = elastic_search.run_elastic_dense_retrieval(
+            datasets,
+            training_args,
+            data_args,
+        )
 
     # eval or predict mrc model
     if training_args.do_eval or training_args.do_predict:

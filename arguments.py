@@ -76,7 +76,7 @@ class DataTrainingArguments:
     )
     eval_retrieval: str = field(
         default='sparse',
-        metadata={"help": "Choose which passage retrieval to be used.[sparse, elastic_sparse]."},
+        metadata={"help": "Choose which passage retrieval to be used.[sparse, elastic_sparse, elastic_dense]."},
     )
     num_clusters: int = field(
         default=64, metadata={"help": "Define how many clusters to use for faiss."}

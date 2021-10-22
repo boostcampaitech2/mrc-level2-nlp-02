@@ -2,11 +2,12 @@ import elasticsearch
 from elasticsearch import Elasticsearch
 import pandas as pd
 from datasets import DatasetDict, Dataset
-from transformers import TrainingArguments
 import pororo
+import torch
 from tqdm import tqdm
+from transformers import TrainingArguments, AutoModel, AutoTokenizer
 
-from typing import List
+from typing import List, Optional
 
 from arguments import (
     ModelArguments,
@@ -52,7 +53,39 @@ def run_elastic_sparse_retrieval(
 
   return datasets
 
-def search_with_elastic(es: Elasticsearch, question: str, data_args: DataTrainingArguments)->str:
+def run_elastic_dense_retrieval(
+  datasets: DatasetDict,
+  training_args: TrainingArguments,
+  data_args: DataTrainingArguments,
+  ) -> DatasetDict:
+
+  es = create_elastic_object()
+
+  questions = datasets['validation']['question']
+  ids = datasets['validation']['id']
+
+  q_encoder = AutoModel.from_pretrained('encoders/q_encoder').to('cuda')
+
+  tokenizer = AutoTokenizer.from_pretrained('klue/bert-base')
+
+  relevent_contexts = []
+
+  for question in questions:
+    relevent_context = search_with_elastic(es, question, data_args, q_encoder, tokenizer)
+    relevent_contexts.append(relevent_context)
+
+  df = pd.DataFrame({'id':ids, 'question':questions, 'context':relevent_contexts})
+  datasets = DatasetDict({"validation": Dataset.from_pandas(df)})
+
+  return datasets
+
+def search_with_elastic(
+  es: Elasticsearch, 
+  question: str, 
+  data_args: DataTrainingArguments,
+  q_encoder: Optional[AutoModel] = None,
+  tokenizer: Optional[AutoTokenizer] = None,
+  )->str:
 
   
   if data_args.use_entity_enrichment:
@@ -71,6 +104,28 @@ def search_with_elastic(es: Elasticsearch, question: str, data_args: DataTrainin
         }
       }
     }
+  elif data_args.eval_retrieval == 'elastic_dense':
+    with torch.no_grad():
+      q_encoder.eval()
+      q_tokenized = tokenizer([question], padding="max_length", truncation=True, return_tensors='pt').to('cuda')
+      q_emb = q_encoder(**q_tokenized)
+      q_output = q_emb[1].cpu().detach().numpy().tolist()[0]
+    query = {
+      'query':{
+        "script_score": {
+          "query" : {
+            "match_all" : {}
+          },
+          "script": {
+            # "source": "1 / (1 + l2norm(params.queryVector, doc['vector']))",
+            "source": "cosineSimilarity(params.queryVector, doc['vector']) + 1.0",
+            "params": {
+              "queryVector": q_output
+            }
+          }
+        }
+      }
+    }
   else:
     query = {
       'query': {
@@ -80,7 +135,10 @@ def search_with_elastic(es: Elasticsearch, question: str, data_args: DataTrainin
       }
     }
 
-  res = es.search(index='wiki_documents', body=query, size=data_args.top_k_retrieval)
+  if data_args.eval_retrieval == 'elastic_dense':
+    res = es.search(index='wiki_documents_splited_dense', body=query, size=data_args.top_k_retrieval)
+  else:
+    res = es.search(index='wiki_documents', body=query, size=data_args.top_k_retrieval)
   
   relevent_contexts = ''
   max_score = res['hits']['hits'][0]['_score']
@@ -106,7 +164,6 @@ def create_match_phrases(question)-> List:
       match_phrases.append({'match_phrase':{'text': word[0]}})
   
   return match_phrases
-
 
 
 

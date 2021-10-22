@@ -117,13 +117,15 @@ def main():
     
     
     # Add Special token to ookenizer
-    special_tokens_dict = {'additional_special_tokens': ['[CHN]', '[JPN]']}
+    special_tokens_dict = {'additional_special_tokens': ['[CHN]']}
     num_added_toks = tokenizer.add_special_tokens(special_tokens_dict)  
     model.resize_token_embeddings(len(tokenizer))
     # Preprocessing
     preprocessor = Preprocessor()
-    datasets = datasets.map(preprocessor)
-
+    datasets = datasets.map(preprocessor.preprocess_train)
+    print('Train Data Size : %d' %len(datasets['train']))
+    print('Validation Data Size : %d' %len(datasets['validation']))
+    
     # do_train mrc model 혹은 do_eval mrc model
     if training_args.do_train or training_args.do_eval:
         run_mrc(data_args, training_args, model_args, datasets, tokenizer, model)

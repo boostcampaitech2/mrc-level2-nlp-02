@@ -101,11 +101,14 @@ def main():
             data_path = '../data',
             context_path = "wikipedia_documents.json"
         )    
-    
+        
+
     # Preprocessing retrieved Data
     preprocessor = Preprocessor()
-    datasets = datasets.map(preprocessor)
-
+    if training_args.do_eval :
+        datasets = datasets.map(preprocessor.preprocess_train)
+    else :
+        datasets = datasets.map(preprocessor.preprocess_inf)
     # eval or predict mrc model
     if training_args.do_eval or training_args.do_predict:
         run_mrc(data_args, training_args, model_args, datasets, tokenizer, model)

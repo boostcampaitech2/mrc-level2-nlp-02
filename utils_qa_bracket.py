@@ -256,36 +256,36 @@ def postprocess_qa_predictions(
 
         # best prediction을 선택합니다.
         if not version_2_with_negative:
-            ################# span code v2 ##################################
-            text = predictions[0]["text"]
-            max_count=0
-            max_text=''
-            ## 최대한 같은 정보가 들어 올 수 있도록 한다.
-            # 이렇게 하는 이유는 '소비에트 연방 공화국'같은 경우,
-            # 소비에트, 연방, 공화국 이라는 단어가 최대한 겹치는 key 찾기
-            for dict_k in dict_wiki:
-                max_init=0
-                if texts in text.split():
-                    if texts in dict_k.split():
-                        max_init+=1
-                # max_init 0이 들어오는 것을 방지
-                if max_init>=1 and max_init>=max_count:
-                    if max_init>max_count:
-                        max_count=max_init
-                        max_text=text+"("+dict_wiki[dict_k]+")"
-            if len(max_text)==0:
-                max_text=text
-            all_predictions[example["id"]] = max_text
-            ##########################################################################3
-            
-            ################ span code v1 ######################################################3
+            # ################# span code v2 ##################################
             # text = predictions[0]["text"]
+            # max_count=0
+            # max_text=''
+            # ## 최대한 같은 정보가 들어 올 수 있도록 한다.
+            # # 이렇게 하는 이유는 '소비에트 연방 공화국'같은 경우,
+            # # 소비에트, 연방, 공화국 이라는 단어가 최대한 겹치는 key 찾기
             # for dict_k in dict_wiki:
-            #     if text in dict_k.split():
-            #         text=text+"("+dict_wiki[dict_k]+")"
-            #         break
-            # all_predictions[example["id"]] = text
-            ###########################################################################
+            #     max_init=0
+            #     for texts in text.split():
+            #         if texts in dict_k.split():
+            #             max_init+=1
+            #     # max_init 0이 들어오는 것을 방지
+            #     if max_init>=1 and max_init>=max_count:
+            #         if max_init>max_count:
+            #             max_count=max_init
+            #             max_text=text+"("+dict_wiki[dict_k]+")"
+            # if len(max_text)==0:
+            #     max_text=text
+            # all_predictions[example["id"]] = max_text
+            # ##########################################################################3
+            
+            ############### span code v1 ######################################################3
+            text = predictions[0]["text"]
+            for dict_k in dict_wiki:
+                if text in dict_k.split():
+                    text=text+"("+dict_wiki[dict_k]+")"
+                    break
+            all_predictions[example["id"]] = text
+            ##########################################################################
             #all_predictions[example["id"]] = predictions[0]["text"] #orginial
         else:
             # else case : 먼저 비어 있지 않은 최상의 예측을 찾아야 합니다
@@ -304,32 +304,32 @@ def postprocess_qa_predictions(
             if score_diff > null_score_diff_threshold:
                 all_predictions[example["id"]] = ""
             else:
-                ################ span code v2 ######################################################3
-                text = best_non_null_pred["text"]
-                max_count=0
-                max_text=''
-                for dict_k in dict_wiki:
-                    max_init=0
-                    if texts in text.split():
-                        if texts in dict_k.split():
-                            max_init+=1
-                    # max_init 0이 들어오는 것을 방지
-                    if max_init>=1 and max_init>=max_count:
-                        if max_init>max_count:
-                            max_count=max_init
-                            max_text=text+"("+dict_wiki[dict_k]+")"
-                if len(max_text)==0:
-                    max_text=text
-                all_predictions[example["id"]] = max_text
-                ###########################################################################
+                # ################ span code v2 ######################################################3
+                # text = best_non_null_pred["text"]
+                # max_count=0
+                # max_text=''
+                # for dict_k in dict_wiki:
+                #     max_init=0
+                #     for texts in text.split():
+                #         if texts in dict_k.split():
+                #             max_init+=1
+                #     # max_init 0이 들어오는 것을 방지
+                #     if max_init>=1 and max_init>=max_count:
+                #         if max_init>max_count:
+                #             max_count=max_init
+                #             max_text=text+"("+dict_wiki[dict_k]+")"
+                # if len(max_text)==0:
+                #     max_text=text
+                # all_predictions[example["id"]] = max_text
+                # ###########################################################################
                 
                 ################ span code v1 ######################################################3
-                # text = best_non_null_pred["text"]
-                # for dict_k in dict_wiki:
-                #     if text in dict_k.split():
-                #         text=text+"("+dict_wiki[dict_k]+")"
-                #         break
-                # all_predictions[example["id"]] = text
+                text = best_non_null_pred["text"]
+                for dict_k in dict_wiki:
+                    if text in dict_k.split():
+                        text=text+"("+dict_wiki[dict_k]+")"
+                        break
+                all_predictions[example["id"]] = text
                 ###########################################################################
                 #all_predictions[example["id"]] = best_non_null_pred["text"] # orginial
 

@@ -265,8 +265,8 @@ def postprocess_qa_predictions(
             # 소비에트, 연방, 공화국 이라는 단어가 최대한 겹치는 key 찾기
             for dict_k in dict_wiki:
                 max_init=0
-                if text in text.split():
-                    if text in dict_k.split():
+                if texts in text.split():
+                    if texts in dict_k.split():
                         max_init+=1
                 # max_init 0이 들어오는 것을 방지
                 if max_init>=1 and max_init>=max_count:
@@ -308,8 +308,8 @@ def postprocess_qa_predictions(
                 max_text=''
                 for dict_k in dict_wiki:
                     max_init=0
-                    if text in text.split():
-                        if text in dict_k.split():
+                    if texts in text.split():
+                        if texts in dict_k.split():
                             max_init+=1
                     # max_init 0이 들어오는 것을 방지
                     if max_init>=1 and max_init>=max_count:

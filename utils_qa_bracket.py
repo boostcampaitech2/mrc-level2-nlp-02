@@ -263,44 +263,41 @@ def postprocess_qa_predictions(
         # best prediction을 선택합니다.
         if not version_2_with_negative:
             ############### span code v3 ######################################################3
-            text = predictions[0]["text"]
-            new_text=''
-            for dict_k in dict_wiki:
-                if len(dict_k)==0:
-                    continue
-                check=False
-                ## prediction answer mecab으로 나누기 -> ex) text = "광배의 뒷면" => ["광배,"의","뒷면"]
-                t = tokenize(text)
-                ## idx 거꾸로 넣음! -> 이유는 answer text 뒤에 괄호 많이 붙기 때문! -> 빨리 끝내기 위해서
-                ## 사실 뒤에서 부터 하는 이유가 있었는데 잊어버렸습니다...ㅠㅠㅠ
-                for idx in range(len(t)-1,-1,-1):
-                    ## context: original context (wiki text top_k 붙인 것!)에 속하는 key여야 한다!
-                    if dict_k in context:
-                        ## dict_k.split() -> ex) ["~~","나는","광배"]에서 "광배"라는 단어 뒤에 바로 한자가 오므로 선정
-                        ccc = dict_k.split()[len(dict_k.split())-1]
-                        dot_count = ccc.count("'")
-                        dot1_count = ccc.count('"')
-                        ## prediction answer mecab 단어 중에, dict_k.split 단어 중에 속한다면
-                        if t[idx] in ccc:
-                            c = text.find(t[idx])
-                            c1 = dict_k.find(t[idx])
-                            # "'농민'(한자)" 이런 경우 대비!
-                            if dot_count>=2 or dot1_count>=2:
-                                c+=len(ccc)-1
-                            ## 이렇게 한 이유는 예로, {"나는 ":"너는"}의 dict가 있다면, "나는 (너는)" 이렇게 붙어야 하므로 -> 띄어쓰기 때문에!
-                            if c1+len(t[idx])<len(dict_k) and dict_k[c1+len(t[idx])]==" ":
-                                new_text = text[0:len(t[idx])+c]+" " + "(" + dict_wiki[dict_k] + ")" + text[len(t[idx])+c+1:]
-                            else:
-                                new_text = text[0:len(t[idx])+c]+ "(" + dict_wiki[dict_k] + ")" + text[len(t[idx])+c:]
-                            check=True
-                            break
-                    if check:
-                        break
-                if check:
-                    break
-            if len(new_text)==0:
-                new_text=text
-            all_predictions[example["id"]] = new_text
+#             text = predictions[0]["text"]
+#             new_text=''
+#             for dict_k in dict_wiki:
+#                 check=False
+#                 ## context: original context (wiki text top_k 붙인 것!)에 속하는 key여야 한다!
+#                 if dict_k in context and len(dict_k.split())!=0:
+#                     ## prediction answer mecab으로 나누기 -> ex) text = "광배의 뒷면" => ["광배,"의","뒷면"
+#                     t = tokenize(text)
+#                     ## dict_k.split() -> ex) ["~~","나는","광배"]에서 "광배"라는 단어 뒤에 바로 한자가 오므로 선정
+#                     ccc = dict_k.split()[len(dict_k.split())-1]
+                    
+#                     ## idx 거꾸로 넣음! -> 이유는 answer text 뒤에 괄호 많이 붙기 때문! -> 빨리 끝내기 위해서
+#                     ## 사실 뒤에서 부터 하는 이유가 있었는데 잊어버렸습니다...ㅠㅠㅠ
+#                     for idx in range(len(t)-1,-1,-1):
+#                         dot_count = ccc.count("'")
+#                         dot1_count = ccc.count('"')
+#                         ## prediction answer mecab 단어 중에, dict_k.split 단어 중에 속한다면
+#                         if t[idx] in ccc:
+#                             c = text.find(t[idx])
+#                             c1 = dict_k.find(t[idx])
+#                             # "'농민'(한자)" 이런 경우 대비!
+#                             if dot_count>=2 or dot1_count>=2:
+#                                 c+=len(ccc)-1
+#                             ## 이렇게 한 이유는 예로, {"나는 ":"너는"}의 dict가 있다면, "나는 (너는)" 이렇게 붙어야 하므로 -> 띄어쓰기 때문에!
+#                             if c1+len(t[idx])<len(dict_k) and dict_k[c1+len(t[idx])]==" ":
+#                                 new_text = text[0:len(t[idx])+c]+" " + "(" + dict_wiki[dict_k] + ")" + text[len(t[idx])+c+1:]
+#                             else:
+#                                 new_text = text[0:len(t[idx])+c]+ "(" + dict_wiki[dict_k] + ")" + text[len(t[idx])+c:]
+#                             check=True
+#                             break
+#                     if check:
+#                         break
+            # if len(new_text)==0:
+            #     new_text=text
+            # all_predictions[example["id"]] = new_text
             ##########################################################################
             # ################# span code v2 ##################################
             # text = predictions[0]["text"]
@@ -325,12 +322,12 @@ def postprocess_qa_predictions(
             # ##########################################################################3
             
             ############### span code v1 ######################################################3
-            # text = predictions[0]["text"]
-            # for dict_k in dict_wiki:
-            #     if text in dict_k.split():
-            #         text=text+"("+dict_wiki[dict_k]+")"
-            #         break
-            # all_predictions[example["id"]] = text
+            text = predictions[0]["text"]
+            for dict_k in dict_wiki:
+                if text in dict_k.split():
+                    text=text+"("+dict_wiki[dict_k]+")"
+                    break
+            all_predictions[example["id"]] = text
             ##########################################################################
             #all_predictions[example["id"]] = predictions[0]["text"] #orginial
         else:
@@ -351,36 +348,32 @@ def postprocess_qa_predictions(
                 all_predictions[example["id"]] = ""
             else:
                 ############### span code v3 ######################################################3
-                text = predictions[0]["text"]
-                new_text=''
-                for dict_k in dict_wiki:
-                    if len(dict_k)==0:
-                        continue
-                    check=False
-                    t = tokenize(text)
-                    for idx in range(len(t)-1,-1,-1):
-                        if dict_k in context:
-                            ccc = dict_k.split()[len(dict_k.split())-1]
-                            dot_count = ccc.count("'")
-                            dot1_count = ccc.count('"')
-                            if t[idx] in ccc:
-                                c = text.find(t[idx])
-                                c1 = dict_k.find(t[idx])
-                                if dot_count>=2 or dot1_count>=2:
-                                    c+=len(ccc)-1
-                                if c1+len(t[idx])<len(dict_k) and dict_k[c1+len(t[idx])]==" ":
-                                    new_text = text[0:len(t[idx])+c]+" " + "(" + dict_wiki[dict_k] + ")" + text[len(t[idx])+c+1:]
-                                else:
-                                    new_text = text[0:len(t[idx])+c]+ "(" + dict_wiki[dict_k] + ")" + text[len(t[idx])+c:]
-                                check=True
-                                break
-                        if check:
-                            break
-                    if check:
-                        break
-                if len(new_text)==0:
-                    new_text=text
-                all_predictions[example["id"]] = new_text
+                # text = predictions[0]["text"]
+                # new_text=''
+                # for dict_k in dict_wiki:
+                #     check=False
+                #     if dict_k in context and len(dict_k.split())!=0:
+                #         t = tokenize(text)
+                #         ccc = dict_k.split()[len(dict_k.split())-1]
+                #         for idx in range(len(t)-1,-1,-1):
+                #             dot_count = ccc.count("'")
+                #             dot1_count = ccc.count('"')
+                #             if t[idx] in ccc:
+                #                 c = text.find(t[idx])
+                #                 c1 = dict_k.find(t[idx])
+                #                 if dot_count>=2 or dot1_count>=2:
+                #                     c+=len(ccc)-1
+                #                 if c1+len(t[idx])<len(dict_k) and dict_k[c1+len(t[idx])]==" ":
+                #                     new_text = text[0:len(t[idx])+c]+" " + "(" + dict_wiki[dict_k] + ")" + text[len(t[idx])+c+1:]
+                #                 else:
+                #                     new_text = text[0:len(t[idx])+c]+ "(" + dict_wiki[dict_k] + ")" + text[len(t[idx])+c:]
+                #                 check=True
+                #                 break
+                #         if check:
+                #             break
+                # if len(new_text)==0:
+                #     new_text=text
+                # all_predictions[example["id"]] = new_text
                 ##########################################################################
                 # ################ span code v2 ######################################################3
                 # text = best_non_null_pred["text"]
@@ -402,12 +395,12 @@ def postprocess_qa_predictions(
                 # ###########################################################################
                 
                 ################ span code v1 ######################################################3
-                # text = best_non_null_pred["text"]
-                # for dict_k in dict_wiki:
-                #     if text in dict_k.split():
-                #         text=text+"("+dict_wiki[dict_k]+")"
-                #         break
-                # all_predictions[example["id"]] = text
+                text = best_non_null_pred["text"]
+                for dict_k in dict_wiki:
+                    if text in dict_k.split():
+                        text=text+"("+dict_wiki[dict_k]+")"
+                        break
+                all_predictions[example["id"]] = text
                 ###########################################################################
                 #all_predictions[example["id"]] = best_non_null_pred["text"] # orginial
 

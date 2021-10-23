@@ -273,6 +273,8 @@ def postprocess_qa_predictions(
                     if max_init>max_count:
                         max_count=max_init
                         max_text=text+"("+dict_wiki[dict_k]+")"
+            if len(max_text)==0:
+                max_text=text
             all_predictions[example["id"]] = max_text
             ##########################################################################3
             
@@ -316,6 +318,8 @@ def postprocess_qa_predictions(
                         if max_init>max_count:
                             max_count=max_init
                             max_text=text+"("+dict_wiki[dict_k]+")"
+                if len(max_text)==0:
+                    max_text=text
                 all_predictions[example["id"]] = max_text
                 ###########################################################################
                 

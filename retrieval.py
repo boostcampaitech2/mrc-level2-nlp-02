@@ -758,10 +758,11 @@ class DenseRetrieval:
 
                     p_outputs = self.p_encoder(**p_inputs)
                     q_outputs = self.q_encoder(**q_inputs)
+                    breakpoint()
 
                     p_outputs = p_outputs.view(batch_size, -1, self.num_neg + 1)
                     q_outputs = q_outputs.view(batch_size, 1, -1)
-
+                    
                     sim_scores = torch.bmm(q_outputs, p_outputs).squeeze()
                     sim_scores = sim_scores.view(batch_size, -1)
                     sim_scores = F.log_softmax(sim_scores, dim=1)
@@ -1108,7 +1109,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    set_seed(42)
+    # set_seed(42)
 
     dense_args = TrainingArguments(
         output_dir="dense_retireval",

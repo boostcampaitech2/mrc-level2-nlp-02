@@ -97,7 +97,6 @@ def main():
         type(tokenizer),
         type(model),
     )
-    breakpoint()
     # do_train mrc model 혹은 do_eval mrc model
     if training_args.do_train or training_args.do_eval:
         run_mrc(data_args, training_args, model_args, datasets, tokenizer, model)

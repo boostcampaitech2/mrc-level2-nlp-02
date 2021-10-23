@@ -14,17 +14,21 @@ class ModelArguments:
             "help": "Path to pretrained model or model identifier from huggingface.co/models"
         },
     )
-    config_name: Optional[str] = field(
-        default="klue/roberta-large",
-        metadata={
-            "help": "Pretrained config name or path if not the same as model_name"
-        },
-    )
-    tokenizer_name: Optional[str] = field(
-        default="klue/roberta-large",
-        metadata={
-            "help": "Pretrained tokenizer name or path if not the same as model_name"
-        },
+    # config_name: Optional[str] = field(
+    #     default="klue/roberta-large",
+    #     metadata={
+    #         "help": "Pretrained config name or path if not the same as model_name"
+    #     },
+    # )
+    # tokenizer_name: Optional[str] = field(
+    #     default=None,
+    #     metadata={
+    #         "help": "customized tokenizer path if not the same as model_name"
+    #     },
+    # )
+    customized_tokenizer_flag: bool = field(
+        default=False,
+        metadata={"help": "Load customized roberta tokenizer"},
     )
 
 
@@ -94,4 +98,20 @@ class DataTrainingArguments:
     train_retrieval: bool = field(
         default=True,
         metadata={"help": "Whether to train sparse/dense embedding (prepare for retrieval)."},
+    )
+
+@dataclass
+class LoggingArguments:
+    """
+    Arguments pertaining to what data we are going to input our model for training and eval.
+    """
+
+    wandb_name: Optional[str] = field(
+        default="model/roberta",
+        metadata={"help": "The name of the dataset to use."},
+    )
+
+    dotenv_path: Optional[str] = field(
+        default='./wandb.env',
+        metadata={"help":'input your dotenv path'},
     )

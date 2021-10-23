@@ -7,7 +7,7 @@ import dataclasses
 from datasets import load_metric, load_from_disk, Dataset, DatasetDict
 #from datasets import Value, Features, Sequence
 
-from transformers import AutoConfig, AutoModelForQuestionAnswering, AutoTokenizer
+from transformers import AutoConfig, AutoModelForQuestionAnswering, AutoTokenizer, BertTokenizer
 
 from transformers import (
     DataCollatorWithPadding,
@@ -28,7 +28,13 @@ from preprocessing import preprocessing_data
 from arguments import (
     ModelArguments,
     DataTrainingArguments,
+    LoggingArguments,
 )
+
+from customtokenizer import load_pretrained_tokenizer
+
+import wandb
+from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
 
@@ -38,10 +44,25 @@ def main():
     # --help flag 를 실행시켜서 확인할 수 도 있습니다.
 
     parser = HfArgumentParser(
-        (ModelArguments, DataTrainingArguments, TrainingArguments)
+        (ModelArguments, DataTrainingArguments, TrainingArguments, LoggingArguments)
     )
-    model_args, data_args, training_args = parser.parse_args_into_dataclasses()
+    model_args, data_args, training_args, log_args = parser.parse_args_into_dataclasses()
+    # training_args.num_train_epochs = 5
+    
     print(model_args.model_name_or_path)
+    
+    #wandb
+    load_dotenv(dotenv_path=log_args.dotenv_path)
+    WANDB_AUTH_KEY = os.getenv("WANDB_AUTH_KEY")
+    wandb.login(key=WANDB_AUTH_KEY)
+
+    wandb.init(
+        entity="klue-level2-nlp-02",
+        project="mrc_project_1",
+        name=log_args.wandb_name,
+        group=model_args.model_name_or_path,
+    )
+    wandb.config.update(training_args)
 
     # [참고] argument를 manual하게 수정하고 싶은 경우에 아래와 같은 방식을 사용할 수 있습니다
     # training_args.per_device_train_batch_size = 4
@@ -67,30 +88,42 @@ def main():
     datasets = load_from_disk(data_args.dataset_name)
 
     #기본 전처리를 진행합니다.
-    datasets = preprocessing_data(data = datasets, do_train=training_args.do_train, do_eval=training_args.do_eval)
+    datasets = preprocessing_data(data = datasets)
     print(datasets)
 
     # AutoConfig를 이용하여 pretrained model 과 tokenizer를 불러옵니다.
     # argument로 원하는 모델 이름을 설정하면 옵션을 바꿀 수 있습니다.
     config = AutoConfig.from_pretrained(
-        model_args.config_name
-        if model_args.config_name is not None
-        else model_args.model_name_or_path,
+        model_args.model_name_or_path
+    #     model_args.config_name
+    #     if model_args.config_name is not None
+    #     else model_args.model_name_or_path,
     )
-    tokenizer = AutoTokenizer.from_pretrained(
-        model_args.tokenizer_name
-        if model_args.tokenizer_name is not None
-        else model_args.model_name_or_path,
-        # 'use_fast' argument를 True로 설정할 경우 rust로 구현된 tokenizer를 사용할 수 있습니다.
-        # False로 설정할 경우 python으로 구현된 tokenizer를 사용할 수 있으며,
-        # rust version이 비교적 속도가 빠릅니다.
-        use_fast=True,
-    )
+    print(config)
+    # tokenizer = AutoTokenizer.from_pretrained(
+    #     model_args.tokenizer_name
+    #     if model_args.tokenizer_name is not None
+    #     else model_args.model_name_or_path,
+    #     # 'use_fast' argument를 True로 설정할 경우 rust로 구현된 tokenizer를 사용할 수 있습니다.
+    #     # False로 설정할 경우 python으로 구현된 tokenizer를 사용할 수 있으며,
+    #     # rust version이 비교적 속도가 빠릅니다.
+    #     use_fast=True,)
+    tokenizer = load_pretrained_tokenizer(
+            pretrained_model_name_or_path = model_args.model_name_or_path,
+            # pretrained_model_name_or_path = model_args.tokenizer_name
+            # if model_args.tokenizer_name is not None
+            # else model_args.model_name_or_path,
+            custom_flag = model_args.customized_tokenizer_flag,
+            datasets=datasets,
+            use_fast=True)
+    print("num of added vocab in tokenizer : ", len(tokenizer.vocab) - config.vocab_size)
     model = AutoModelForQuestionAnswering.from_pretrained(
         model_args.model_name_or_path,
         from_tf=bool(".ckpt" in model_args.model_name_or_path), # Load the model weights from a TensorFlow checkpoint save file
         config=config,
     )
+    #model resize
+    model.resize_token_embeddings(len(tokenizer))
 
     print(
         type(training_args),
@@ -371,7 +404,7 @@ def run_mrc(
         compute_metrics=compute_metrics,
     )
 
-    # Training
+    # Training[]
     if training_args.do_train:
         if last_checkpoint is not None:
             checkpoint = last_checkpoint

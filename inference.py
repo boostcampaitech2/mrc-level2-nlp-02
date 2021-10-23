@@ -38,8 +38,16 @@ from retrieval import SparseRetrieval
 from arguments import (
     ModelArguments,
     DataTrainingArguments,
+    LoggingArguments,
 )
 
+from customtokenizer import load_pretrained_tokenizer
+
+import wandb
+from dotenv import load_dotenv
+import os
+
+from preprocessing import preprocessing_data
 
 logger = logging.getLogger(__name__)
 
@@ -50,9 +58,23 @@ def main():
     
     # dataclass를 통해 변수를 만들고 HfArgumentParser를 통해 합쳐서 사용
     parser = HfArgumentParser(
-        (ModelArguments, DataTrainingArguments, TrainingArguments)
+        (ModelArguments, DataTrainingArguments, TrainingArguments, LoggingArguments)
     )
-    model_args, data_args, training_args = parser.parse_args_into_dataclasses()
+    model_args, data_args, training_args, log_args = parser.parse_args_into_dataclasses()
+
+    #wandb
+    load_dotenv(dotenv_path=log_args.dotenv_path)
+    WANDB_AUTH_KEY = os.getenv("WANDB_AUTH_KEY")
+    wandb.login(key=WANDB_AUTH_KEY)
+
+    wandb.init(
+        entity="klue-level2-nlp-02",
+        project="mrc_project_1",
+        name=log_args.wandb_name + "_eval" if training_args.do_eval==True else "_inference",
+        group=model_args.model_name_or_path,
+    )
+    wandb.config.update(training_args)
+
 
     training_args.do_train = True
 
@@ -71,29 +93,35 @@ def main():
 
     # 모델을 초기화하기 전에 난수를 고정합니다.
     set_seed(training_args.seed)
-
+    
+    #데이터셋을 불러옵니다.
     datasets = load_from_disk(data_args.dataset_name)
+    
+    #기본 전처리를 진행합니다.
+    datasets = preprocessing_data(data = datasets)
     print(datasets)
 
     # AutoConfig를 이용하여 pretrained model 과 tokenizer를 불러옵니다.
     # argument로 원하는 모델 이름을 설정하면 옵션을 바꿀 수 있습니다.
     config = AutoConfig.from_pretrained(
-        model_args.config_name
-        if model_args.config_name
-        else model_args.model_name_or_path,
+        model_args.model_name_or_path
+    #     model_args.config_name
+    #     if model_args.config_name
+    #     else model_args.model_name_or_path,
     )
     tokenizer = AutoTokenizer.from_pretrained(
-        model_args.tokenizer_name
-        if model_args.tokenizer_name
-        else model_args.model_name_or_path,
+        model_args.model_name_or_path,
+        # model_args.tokenizer_name
+        # if model_args.tokenizer_name
+        # else model_args.model_name_or_path,
         use_fast=True,
     )
+    
     model = AutoModelForQuestionAnswering.from_pretrained(
         model_args.model_name_or_path,
         from_tf=bool(".ckpt" in model_args.model_name_or_path),
         config=config,
     )
-
     # True일 경우 : run passage retrieval
     if data_args.eval_retrieval:
         datasets = run_sparse_retrieval(

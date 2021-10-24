@@ -2,9 +2,7 @@ import re
 
 class Preprocessor :
     def __init__(self, ) :
-        self.bracket_comp = re.compile(r'\([^)]*\)')
-        self.chn_comp = re.compile('[一-鿕ぁ-ヿ]+')
-        self.unicode_comp = re.compile('[' + chr(0) + '-' + chr(31) + chr(8191) + '-' + chr(12288) + chr(55204) + '-' + chr(63743) + ']')
+        pass
 
     def preprocess_train(self, dataset) :
         assert isinstance(dataset, dict)
@@ -45,46 +43,22 @@ class Preprocessor :
 
     def preprocess_context(self, context) :
         context = self.remove_newline(context)
-        context = self.remove_special_unicode(context)
+        context = self.remove_outrange(context)
         context = self.convert_foreign(context)
         return context
 
     def remove_newline(self, txt) :
-        """[summary] : remove '\n' code
-        Args:
-            txt ([str]): question and context
-        Returns:
-            [str]: text which '\n' characters is removed
-        """
-        txt = txt.replace('</br>', ' ')
-        txt = txt.replace('\n*' , ' ')
-        txt = txt.replace('\n#' , ' ')
-        txt = txt.replace('\n' , ' ')
-        txt = re.sub('\s+' , ' ', txt)
+        txt = txt.replace('\u3000', ' ')
+        txt = txt.replace('\n', ' ')
+        txt = txt.replace('\\n', ' ')
+        txt = re.sub('\s+', ' ', txt)
         return txt
     
-    def remove_special_unicode(self, txt) :
-        """[summary] : remove special unicode (e.g '\u3000' , '\xa0' ...)
-        Args:
-            txt ([str]): question and context
-        Returns:
-            [str]: Text which speical unicode is removed 
-        """
-        txt = self.unicode_comp.sub(' ', txt)
-        txt = re.sub('\s+' , ' ', txt)
+    def remove_outrange(self, txt) :
+        txt = re.sub('[힣-\uffff]', ' ', txt)
+        txt = re.sub('\s+', ' ', txt)
         return txt
 
     def convert_foreign(self, txt) :
-        bracket_list = self.bracket_comp.finditer(txt)
-        prev_brackets = []
-        for bracket in bracket_list :
-            start_idx, end_idx = bracket.start(), bracket.end()
-            prev_brackets.append(txt[start_idx:end_idx])
-
-        for bracket in prev_brackets :
-            cur_bracket = self.chn_comp.sub('[CHN]', bracket)
-            if bracket == cur_bracket :
-                continue
-            txt = txt.replace(bracket, cur_bracket)
-
+        txt = re.sub('\\([\u4e00-\u9fff\u3040-\u31ff ]+\\)', '[CHN]', txt)
         return txt

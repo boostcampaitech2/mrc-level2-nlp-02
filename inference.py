@@ -104,11 +104,13 @@ def main():
         
 
     # Preprocessing retrieved Data
+    datasets.cleanup_cache_files()
     preprocessor = Preprocessor()
     if training_args.do_eval :
         datasets = datasets.map(preprocessor.preprocess_train)
     else :
         datasets = datasets.map(preprocessor.preprocess_inf)
+
     # eval or predict mrc model
     if training_args.do_eval or training_args.do_predict:
         run_mrc(data_args, training_args, model_args, datasets, tokenizer, model)

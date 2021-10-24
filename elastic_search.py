@@ -107,7 +107,7 @@ def search_with_elastic(
   elif data_args.eval_retrieval == 'elastic_dense':
     with torch.no_grad():
       q_encoder.eval()
-      q_tokenized = tokenizer([question], padding="max_length", truncation=True, return_tensors='pt').to('cuda')
+      q_tokenized = tokenizer([question], padding="max_length", truncation=True, return_tensors='pt', max_length=510).to('cuda')
       q_emb = q_encoder(**q_tokenized)
       q_output = q_emb[1].cpu().detach().numpy().tolist()[0]
     query = {

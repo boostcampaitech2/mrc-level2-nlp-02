@@ -32,7 +32,7 @@ from transformers import (
     TrainingArguments,
 )
 
-from model_encoder import RobertaEncoder
+from model_encoder import RobertaEncoder, BertEncoder
 
 
 @contextmanager
@@ -428,8 +428,8 @@ class DenseRetrieval:
 
         self.train_dataset = load_from_disk(data_path)["train"]
         self.valid_dataset = load_from_disk(data_path)["validation"]
-        self.p_dataset = self.train_dataset["context"] + self.valid_dataset["context"]
-        self.q_dataset = self.train_dataset["question"] + self.valid_dataset["question"]
+        self.p_dataset = self.train_dataset["context"]
+        self.q_dataset = self.train_dataset["question"]
 
         self.num_neg = num_neg
         self.tokenizer = tokenizer
@@ -537,7 +537,6 @@ class DenseRetrieval:
             return_tensors="pt",
             return_token_type_ids=False,
         )
-
         max_len = p_seqs["input_ids"].size(-1)
         p_seqs["input_ids"] = p_seqs["input_ids"].view(-1, num_neg + 1, max_len)
         p_seqs["attention_mask"] = p_seqs["attention_mask"].view(
@@ -1091,20 +1090,20 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="")
     parser.add_argument(
-        "--dataset_name", metavar="./data/train_dataset", type=str, help=""
+        "--dataset_name", default="../data/train_dataset", type=str, help=""
     )
     parser.add_argument(
         "--model_name_or_path",
-        metavar="bert-base-multilingual-cased",
+        default="klue/bert-base",
         type=str,
         help="",
     )
-    parser.add_argument("--data_path", metavar="./data", type=str, help="")
+    parser.add_argument("--data_path", default="./data", type=str, help="")
     parser.add_argument(
-        "--context_path", metavar="wikipedia_documents", type=str, help=""
+        "--context_path", default="wikipedia_documents", type=str, help=""
     )
-    parser.add_argument("--use_faiss", metavar=False, type=bool, help="")
-    parser.add_argument("--save_dir", metavar="./encoders", type=str, help="")
+    parser.add_argument("--use_faiss", default=False, type=bool, help="")
+    parser.add_argument("--save_dir", default="./encoders", type=str, help="")
     parser.add_argument("--num_neg", default=0, type=int, help="")
 
     args = parser.parse_args()
@@ -1138,15 +1137,16 @@ if __name__ == "__main__":
     )
 
     dense_retriever.load_encoder()
-    # dense_retriever.make_wiki_embedding(64)
 
-    # query = "태어난 지 얼마 안 된 웨이게오쿠스쿠스는 무엇이 달라지는가?"
+    dense_retriever.make_wiki_embedding(64)
 
-    # scores, results = dense_retriever.get_relevant_doc(query, k=5)
+    query = "태어난 지 얼마 안 된 웨이게오쿠스쿠스는 무엇이 달라지는가?"
 
-    # print(f"[Search Query] {query}\n")
+    scores, results = dense_retriever.get_relevant_doc(query, k=5)
 
-    # indices = results.tolist()
-    # for i, idx in enumerate(indices):
-    #     print(f"\nTop-{i + 1}th Passage (Index {idx}, Score : {scores[idx]})")
-    #     print(dense_retriever.p_dataset[idx])
+    print(f"[Search Query] {query}\n")
+
+    indices = results.tolist()
+    for i, idx in enumerate(indices):
+        print(f"\nTop-{i + 1}th Passage (Index {idx}, Score : {scores[idx]})")
+        print(dense_retriever.p_dataset[idx])

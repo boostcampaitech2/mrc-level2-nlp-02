@@ -26,6 +26,12 @@ class ModelArguments:
             "help": "Pretrained tokenizer name or path if not the same as model_name"
         },
     )
+    wandb_tag: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "wandb tag string"
+        },   
+    )
 
 
 @dataclass
@@ -33,7 +39,6 @@ class DataTrainingArguments:
     """
     Arguments pertaining to what data we are going to input our model for training and eval.
     """
-
     dataset_name: Optional[str] = field(
         default="/opt/ml/data/train_dataset",
         metadata={"help": "The name of the dataset to use."},
@@ -89,4 +94,17 @@ class DataTrainingArguments:
     )
     use_faiss: bool = field(
         default=False, metadata={"help": "Whether to build with faiss"}
+    )
+    num_neg: int = field(
+        default=0, metadata={"help": "Define how many negative sampling dataset"}
+    )
+    topR: float = field(
+        default=0,
+        metadata={
+            "help": "Filter passage by (top score * topR)"},
+    )
+    med_flag: bool = field(
+        default=False,
+        metadata={
+            "help": "Filter passage by median of (top score * topR)"},
     )

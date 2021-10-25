@@ -33,7 +33,8 @@ from transformers import (
 
 from utils_qa import postprocess_qa_predictions, check_no_error
 from trainer_qa import QuestionAnsweringTrainer
-from retrieval import SparseRetrieval
+from retriever.retriever_sparse_BM25 import SparseRetrievalBM25
+from retriever.retriever_dense import DenseRetrieval
 
 from arguments import (
     ModelArguments,
@@ -41,7 +42,10 @@ from arguments import (
 )
 
 import utils
+import wandb
+
 import elastic_search
+from model_encoder import BertEncoder
 
 
 logger = logging.getLogger(__name__)
@@ -110,11 +114,75 @@ def main():
             training_args,
             data_args,
         )
+    elif data_args.eval_retrieval == "dense":
+        datasets = run_dense_retrieval(
+            "klue/bert-base", datasets, training_args, data_args
+        )
+
 
     # eval or predict mrc model
     if training_args.do_eval or training_args.do_predict:
         run_mrc(data_args, training_args, model_args, datasets, tokenizer, model)
 
+
+def run_dense_retrieval(
+    model_checkpoint: str,
+    datasets: DatasetDict,
+    training_args: TrainingArguments,
+    data_args: DataTrainingArguments,
+):
+    dense_tokenizer = AutoTokenizer.from_pretrained(model_checkpoint)
+    p_encoder = BertEncoder.from_pretrained(model_checkpoint).to(training_args.device)
+    q_encoder = BertEncoder.from_pretrained(model_checkpoint).to(training_args.device)
+    if data_args.num_neg != 0:
+        print("change batch size default(8) to 2 !!!")
+        training_args.per_device_train_batch_size = 2
+    retriever = DenseRetrieval(
+        training_args,
+        data_path="/opt/ml/data/train_dataset",
+        num_neg=data_args.num_neg,
+        tokenizer=dense_tokenizer,
+        p_encoder=p_encoder,
+        q_encoder=q_encoder,
+        save_dir="./encoders",
+    )
+
+    retriever.load_encoder()
+    df = retriever.retrieve(
+        datasets["validation"],
+        "/opt/ml/data/wiki_embedding.csv",
+        topk=data_args.top_k_retrieval,
+    )
+
+    # test data 에 대해선 정답이 없으므로 id question context 로만 데이터셋이 구성됩니다.
+    if training_args.do_predict:
+        f = Features(
+            {
+                "context": Value(dtype="string", id=None),
+                "id": Value(dtype="string", id=None),
+                "question": Value(dtype="string", id=None),
+            }
+        )
+
+    # train data 에 대해선 정답이 존재하므로 id question context answer 로 데이터셋이 구성됩니다.
+    elif training_args.do_eval:
+        f = Features(
+            {
+                "answers": Sequence(
+                    feature={
+                        "text": Value(dtype="string", id=None),
+                        "answer_start": Value(dtype="int32", id=None),
+                    },
+                    length=-1,
+                    id=None,
+                ),
+                "context": Value(dtype="string", id=None),
+                "id": Value(dtype="string", id=None),
+                "question": Value(dtype="string", id=None),
+            }
+        )
+    datasets = DatasetDict({"validation": Dataset.from_pandas(df, features=f)})
+    return datasets
 
 def run_sparse_retrieval(
     tokenize_fn: Callable[[str], List[str]],
@@ -126,8 +194,8 @@ def run_sparse_retrieval(
 ) -> DatasetDict:
 
     # Query에 맞는 Passage들을 Retrieval 합니다.
-    retriever = SparseRetrieval(
-        tokenize_fn=tokenize_fn, data_path=data_path, context_path=context_path
+    retriever = SparseRetrievalBM25(
+        tokenize_fn=tokenize_fn, data_path=data_path, context_path=context_path, topR=data_args.topR, median=data_args.med_flag
     )
     retriever.get_sparse_embedding()
 
@@ -289,6 +357,18 @@ def run_mrc(
 
     def compute_metrics(p: EvalPrediction) -> Dict:
         return metric.compute(predictions=p.predictions, references=p.label_ids)
+
+    if training_args.do_eval :
+        wandb_name = model_args.model_name_or_path
+        wandb_name += '-' + model_args.wandb_tag if model_args.wandb_tag is not None else ''
+        wandb_name += '-InferEval'
+        wandb.init(
+            entity="klue-level2-nlp-02",
+            project="mrc_project_model",
+            name=wandb_name,
+            group=model_args.model_name_or_path
+        )
+        wandb.config.update(training_args)
 
     print("init trainer...")
     # Trainer 초기화

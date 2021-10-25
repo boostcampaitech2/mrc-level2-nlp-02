@@ -1,0 +1,4 @@
+name,5,10,15,50,100,total_count
+SparseRetrievalTFIDF,140,160,170,203,217,240
+SparseRetrievalBM25,195,216,218,229,235,240
+DenseRetrieval,119,135,148,179,192,240

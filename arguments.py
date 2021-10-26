@@ -108,3 +108,8 @@ class DataTrainingArguments:
         metadata={
             "help": "Filter passage by median of (top score * topR)"},
     )
+    reconfig: bool = field(
+        default=False,
+        metadata={
+            "help": "Elastic search re-config flag"},
+    )

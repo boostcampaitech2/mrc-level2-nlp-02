@@ -70,7 +70,7 @@ class SparseRetrieval:
         print(f"Lengths of unique contexts : {len(self.contexts)}")
 
         #corpus wiki 데이터를 전처리 합니다.
-        self.contexts = preprocessing_data(data = self.contexts)
+        # self.contexts = preprocessing_data(data = self.contexts)
 
         self.ids = list(range(len(self.contexts)))
 
@@ -112,7 +112,7 @@ class SparseRetrieval:
         else:
             print("Build passage BM25_class_instant")
             # BM25는 어떤 text 전처리 X ->  BM25 클래스의 인스턴스를 생성
-            tokenized_contexts= [self.tokenizer(i) for i in self.contexts]
+            tokenized_contexts= [self.tokenizer(i) for i in tqdm(self.contexts)]
             self.BM25 = BM25Plus(tokenized_contexts)           
             with open(bm_emd_path, "wb") as file:
                 pickle.dump(self.BM25, file)

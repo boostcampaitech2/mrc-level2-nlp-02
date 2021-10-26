@@ -1,6 +1,7 @@
 import logging
 import os
 import sys
+import pandas as pd
 
 from typing import List, Callable, NoReturn, NewType, Any
 import dataclasses
@@ -31,7 +32,7 @@ from arguments import (
     LoggingArguments,
 )
 
-from customtokenizer import load_pretrained_tokenizer
+from custom_tokenizer import load_pretrained_tokenizer
 
 import wandb
 from dotenv import load_dotenv
@@ -44,14 +45,12 @@ def main():
     # --help flag 를 실행시켜서 확인할 수 도 있습니다.
 
     parser = HfArgumentParser(
-        (ModelArguments, DataTrainingArguments, TrainingArguments, LoggingArguments)
+        (ModelArguments, DataTrainingArguments, LoggingArguments, TrainingArguments)
     )
-    model_args, data_args, training_args, log_args = parser.parse_args_into_dataclasses()
-    # training_args.num_train_epochs = 5
+
+    model_args, data_args, log_args, training_args = parser.parse_args_into_dataclasses()
     
-    print(model_args.model_name_or_path)
-    
-    #wandb
+    wandb
     load_dotenv(dotenv_path=log_args.dotenv_path)
     WANDB_AUTH_KEY = os.getenv("WANDB_AUTH_KEY")
     wandb.login(key=WANDB_AUTH_KEY)
@@ -67,6 +66,7 @@ def main():
     # [참고] argument를 manual하게 수정하고 싶은 경우에 아래와 같은 방식을 사용할 수 있습니다
     # training_args.per_device_train_batch_size = 4
     # print(training_args.per_device_train_batch_size)
+    training_args.num_train_epochs=1
 
     print(f"model is from {model_args.model_name_or_path}")
     print(f"data is from {data_args.dataset_name}")
@@ -83,47 +83,66 @@ def main():
 
     # 모델을 초기화하기 전에 난수를 고정합니다.
     set_seed(training_args.seed)
-    
-    #데이터셋을 불러옵니다.
+    # 데이터셋을 불러옵니다.
     datasets = load_from_disk(data_args.dataset_name)
+    
+    # rtt 데이터셋이 존재할 경우 기존 데이터셋과 합칩니다.
+    if data_args.rtt_dataset_name != None:
+        print(" "+"*"*50,"\n","*"*50,"\n","*"*50)
+        print(" ***** rtt 데이터 병합 전 데이터 개수: ", len(datasets['train']),"******")
+        rtt_data = pd.read_csv(data_args.rtt_dataset_name)
+        rtt_data['answers'] = rtt_data.answers.map(eval)
 
+        train_data = datasets['train'].to_pandas()
+        new_data = pd.concat([train_data,rtt_data]).reset_index(drop=True)
+        # new_data = new_data.drop_duplicates(subset="question",axis=1)
+        datasets['train'] = datasets['train'].from_pandas(new_data)
+        print(" "+"*"*50,"\n","*"*50,"\n","*"*50)
+        print(" ***** rtt 데이터 병합 후 데이터 개수: ", len(datasets['train']),"******")
+        print(" "+"*"*50,"\n","*"*50,"\n","*"*50)
+
+
+    #cache 파일을 정리합니다.
+    datasets.cleanup_cache_files()
+        
     #기본 전처리를 진행합니다.
-    datasets = preprocessing_data(data = datasets)
-    print(datasets)
+    # print("\n","전처리 전: \n",datasets['train']['context'][0])
+    # datasets = preprocessing_data(data = datasets)
+    # print("\n","전처리 후: \n",datasets['train']['context'][0])
+    
 
     # AutoConfig를 이용하여 pretrained model 과 tokenizer를 불러옵니다.
     # argument로 원하는 모델 이름을 설정하면 옵션을 바꿀 수 있습니다.
     config = AutoConfig.from_pretrained(
         model_args.model_name_or_path
-    #     model_args.config_name
-    #     if model_args.config_name is not None
-    #     else model_args.model_name_or_path,
     )
     print(config)
-    # tokenizer = AutoTokenizer.from_pretrained(
-    #     model_args.tokenizer_name
-    #     if model_args.tokenizer_name is not None
-    #     else model_args.model_name_or_path,
     #     # 'use_fast' argument를 True로 설정할 경우 rust로 구현된 tokenizer를 사용할 수 있습니다.
     #     # False로 설정할 경우 python으로 구현된 tokenizer를 사용할 수 있으며,
     #     # rust version이 비교적 속도가 빠릅니다.
-    #     use_fast=True,)
-    tokenizer = load_pretrained_tokenizer(
-            pretrained_model_name_or_path = model_args.model_name_or_path,
-            # pretrained_model_name_or_path = model_args.tokenizer_name
-            # if model_args.tokenizer_name is not None
-            # else model_args.model_name_or_path,
-            custom_flag = model_args.customized_tokenizer_flag,
-            datasets=datasets,
-            use_fast=True)
-    print("num of added vocab in tokenizer : ", len(tokenizer.vocab) - config.vocab_size)
+    # tokenizer = load_pretrained_tokenizer(
+    #         pretrained_model_name_or_path = model_args.model_name_or_path,
+    #         custom_flag = model_args.customized_tokenizer_flag,
+    #         data_selected = data_args.data_selected,
+    #         datasets=datasets,
+    #         use_fast=True)
+    tokenizer = AutoTokenizer.from_pretrained(
+        model_args.model_name_or_path,
+        use_fast=True)
+    
+    print("\n","num of added vocab in tokenizer : ", len(tokenizer.vocab) - config.vocab_size)
+
     model = AutoModelForQuestionAnswering.from_pretrained(
         model_args.model_name_or_path,
         from_tf=bool(".ckpt" in model_args.model_name_or_path), # Load the model weights from a TensorFlow checkpoint save file
         config=config,
     )
-    #model resize
-    model.resize_token_embeddings(len(tokenizer))
+
+    # #model resize
+    # model.resize_token_embeddings(len(tokenizer))
+    # assert model.vocab_size == len(tokenizer), "embedding size and vocab size is not equal"
+    # print("\n",f"embedding size and vocab size is equal \n [model vocab_size] {model.vocab_size} || [tokenizer vocab_size] {len(tokenizer)}" )
+    
 
     print(
         type(training_args),
@@ -142,6 +161,7 @@ def main():
     
     if data_args.train_retrieval:
         retriever = SparseRetrieval(tokenize_fn=tokenizer.tokenize,
+        # retriever = SparseRetrieval(tokenize_fn=AutoTokenizer.from_pretrained(model_args.model_name_or_path).tokenize,
                                     data_path="../data",
                                     context_path="wikipedia_documents.json")
         #retriever.get_sparse_embedding()
@@ -353,7 +373,7 @@ def run_mrc(
     # fp16 -> Whether to use 16-bit (mixed) precision training instead of 32-bit training. (default: false)
     # pad_to_multiple_of -> padding한다는 의미?
     print("-------------------------------------")
-    print(training_args.fp16) # False
+    print("training_args.fp16 :", training_args.fp16) # False
     data_collator = DataCollatorWithPadding(
         tokenizer, pad_to_multiple_of=8 if training_args.fp16 else None
     )

@@ -41,8 +41,6 @@ from arguments import (
     LoggingArguments,
 )
 
-from customtokenizer import load_pretrained_tokenizer
-
 import wandb
 from dotenv import load_dotenv
 import os
@@ -76,7 +74,7 @@ def main():
     wandb.config.update(training_args)
 
 
-    training_args.do_train = True
+    # training_args.do_train = True
 
     print(f"model is from {model_args.model_name_or_path}")
     print(f"data is from {data_args.dataset_name}")
@@ -96,24 +94,21 @@ def main():
     
     #데이터셋을 불러옵니다.
     datasets = load_from_disk(data_args.dataset_name)
+
+    #cache 파일을 정리합니다.
+    datasets.cleanup_cache_files()
     
     #기본 전처리를 진행합니다.
-    datasets = preprocessing_data(data = datasets)
-    print(datasets)
-
+    # if training_args.do_eval==True:
+    #     datasets = preprocessing_data(data = datasets)
+    # print(datasets)
+    
     # AutoConfig를 이용하여 pretrained model 과 tokenizer를 불러옵니다.
     # argument로 원하는 모델 이름을 설정하면 옵션을 바꿀 수 있습니다.
-    config = AutoConfig.from_pretrained(
-        model_args.model_name_or_path
-    #     model_args.config_name
-    #     if model_args.config_name
-    #     else model_args.model_name_or_path,
-    )
+    config = AutoConfig.from_pretrained(model_args.model_name_or_path)
+
     tokenizer = AutoTokenizer.from_pretrained(
         model_args.model_name_or_path,
-        # model_args.tokenizer_name
-        # if model_args.tokenizer_name
-        # else model_args.model_name_or_path,
         use_fast=True,
     )
     

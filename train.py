@@ -3,6 +3,7 @@ import os
 import sys
 
 from typing import List, Callable, NoReturn, NewType, Any
+import pandas as pd
 import dataclasses
 from datasets import load_metric, load_from_disk, Dataset, DatasetDict
 #from datasets import Value, Features, Sequence
@@ -65,7 +66,7 @@ def main():
     
     datasets = load_from_disk(data_args.dataset_name)
     print(datasets)
-
+    
     # AutoConfig를 이용하여 pretrained model 과 tokenizer를 불러옵니다.
     # argument로 원하는 모델 이름을 설정하면 옵션을 바꿀 수 있습니다.
     config = AutoConfig.from_pretrained(
@@ -249,6 +250,16 @@ def run_mrc(
         if "train" not in datasets:
             raise ValueError("--do_train requires a train dataset")
         train_dataset = datasets["train"]
+        
+        # RTT 추가 데이터
+        additional_dataset = pd.read_csv('papago.csv', index_col = 0)
+        print(f'Add RTT data (num: {len(additional_dataset)})')
+        additional_dataset['answers'] = additional_dataset['answers'].map(eval)
+        train_df = train_dataset.to_pandas()
+        train_dataset = pd.concat([train_df, additional_dataset]).reset_index(drop=True)
+        train_dataset = train_dataset.drop_duplicates(['question'], ignore_index=True) # 중복 제거 및 인덱스 재설정
+        breakpoint()
+        train_dataset = Dataset.from_pandas(train_dataset)
 
         # dataset에서 train feature를 생성합니다.
         train_dataset = train_dataset.map(

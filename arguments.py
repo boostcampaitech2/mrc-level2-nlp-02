@@ -15,13 +15,13 @@ class ModelArguments:
         },
     )
     config_name: Optional[str] = field(
-        default="klue/roberta-large",
+        default=None,
         metadata={
             "help": "Pretrained config name or path if not the same as model_name"
         },
     )
     tokenizer_name: Optional[str] = field(
-        default="klue/roberta-large",
+        default=None,
         metadata={
             "help": "Pretrained tokenizer name or path if not the same as model_name"
         },

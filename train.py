@@ -47,6 +47,7 @@ def main():
     # [참고] argument를 manual하게 수정하고 싶은 경우에 아래와 같은 방식을 사용할 수 있습니다
     # training_args.per_device_train_batch_size = 4
     # print(training_args.per_device_train_batch_size)
+    training_args.num_train_epochs = 2
 
     print(f"model is from {model_args.model_name_or_path}")
     print(f"data is from {data_args.dataset_name}")
@@ -252,14 +253,14 @@ def run_mrc(
         train_dataset = datasets["train"]
         
         # RTT 추가 데이터
-        additional_dataset = pd.read_csv('papago.csv', index_col = 0)
-        print(f'Add RTT data (num: {len(additional_dataset)})')
-        additional_dataset['answers'] = additional_dataset['answers'].map(eval)
-        train_df = train_dataset.to_pandas()
-        train_dataset = pd.concat([train_df, additional_dataset]).reset_index(drop=True)
-        train_dataset = train_dataset.drop_duplicates(['question'], ignore_index=True) # 중복 제거 및 인덱스 재설정
-        breakpoint()
-        train_dataset = Dataset.from_pandas(train_dataset)
+        if data_args.add_data is not None:
+            additional_dataset = pd.read_csv(data_args.add_data, index_col = 0)
+            print(f'Add data (num: {len(additional_dataset)})')
+            additional_dataset['answers'] = additional_dataset['answers'].map(eval)
+            train_df = train_dataset.to_pandas()
+            train_dataset = pd.concat([train_df, additional_dataset]).reset_index(drop=True)
+            train_dataset = train_dataset.drop_duplicates(['question'], ignore_index=True) # 중복 제거 및 인덱스 재설정
+            train_dataset = Dataset.from_pandas(train_dataset)
 
         # dataset에서 train feature를 생성합니다.
         train_dataset = train_dataset.map(

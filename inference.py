@@ -126,7 +126,7 @@ def run_sparse_retrieval(
     # Passage Embedding 만들기
     #retriever.get_sparse_embedding()
     retriever.get_sparse_BM25()
-    df = retriever.retrieve_BM25(datasets['validation'], topk=data_args.top_k_retrieval)
+    df = retriever.retrieve_BM25(datasets['validation'], topk=data_args.top_k_retrieval, score_ratio=data_args.score_ratio)
     
     ## bm25 때문에 잠시 지움
     # faiss사용하거나 안 하거나 해서, query를 받아, retrieval한 passage와 id, query 등을 받는다.

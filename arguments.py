@@ -87,6 +87,12 @@ class DataTrainingArguments:
             "help": "Define how many top-k passages to retrieve based on similarity."
         },
     )
+    score_ratio: float = field(
+        default=None,
+        metadata={
+            "help": "Define the score ratio."
+        },
+    )
     use_faiss: bool = field(
         default=False, metadata={"help": "Whether to build with faiss"}
     )
@@ -94,4 +100,8 @@ class DataTrainingArguments:
     train_retrieval: bool = field(
         default=True,
         metadata={"help": "Whether to train sparse/dense embedding (prepare for retrieval)."},
+    )
+    add_data: Optional[str] = field(
+        default=None,
+        metadata={"help": "The path of the additional dataset to use."},
     )

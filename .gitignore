@@ -5,5 +5,4 @@ models/**
 outputs/**
 encoders/**
 
-*.ipynb
 *.sh

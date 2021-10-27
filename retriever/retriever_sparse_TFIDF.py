@@ -1,7 +1,5 @@
-from optparse import Option
 import os
 import json
-from plistlib import Data
 import time
 import faiss
 import pickle
@@ -12,27 +10,16 @@ from tqdm.auto import tqdm
 from contextlib import contextmanager
 from typing import List, Tuple, NoReturn, Any, Optional, Union
 
-import torch
-import torch.nn.functional as F
-from torch.utils.data import DataLoader, TensorDataset
-
 from sklearn.feature_extraction.text import TfidfVectorizer
 
 from datasets import (
     Dataset,
     load_from_disk,
-    concatenate_datasets,
 )
 
 from transformers import (
     AutoTokenizer,
-    AutoConfig,
-    AdamW,
-    get_linear_schedule_with_warmup,
-    TrainingArguments,
 )
-
-from model_encoder import RobertaEncoder
 
 
 @contextmanager
@@ -42,12 +29,13 @@ def timer(name):
     print(f"[{name}] done in {time.time() - t0:.3f} s")
 
 
-class SparseRetrieval:
+class SparseRetrievalTFIDF:
     def __init__(
         self,
         tokenize_fn,
         data_path: Optional[str] = "../data/",
         context_path: Optional[str] = "wikipedia_documents.json",
+        topR: float = 0.0,
     ) -> NoReturn:
 
         """
@@ -64,8 +52,9 @@ class SparseRetrieval:
 
             context_path:
                 Passage들이 묶여있는 파일명입니다.
-
-            data_path/context_path가 존재해야합니다.
+                data_path/context_path가 존재해야합니다.
+            topR:
+                (Top1 score * topR) 이상의 score를 갖는 passage들만 가져옵니다.
 
         Summary:
             Passage 파일을 불러오고 TfidfVectorizer를 선언하는 기능을 합니다.
@@ -88,6 +77,7 @@ class SparseRetrieval:
             max_features=50000,
         )
 
+        self.topR = topR
         self.p_embedding = None  # get_sparse_embedding()로 생성합니다
         self.indexer = None  # build_faiss()로 생성합니다.
 
@@ -277,11 +267,35 @@ class SparseRetrieval:
             result = result.toarray()
         doc_scores = []
         doc_indices = []
-        for i in range(result.shape[0]):
-            sorted_result = np.argsort(result[i, :])[::-1]
-            doc_scores.append(result[i, :][sorted_result].tolist()[:k])
-            doc_indices.append(sorted_result.tolist()[:k])
-        return doc_scores, doc_indices
+        if self.topR == 0:
+            for i in range(result.shape[0]):
+                sorted_score = np.sort(result[i, :])[::-1]
+                sorted_id = np.argsort(result[i, :])[::-1]
+
+                doc_scores.append(sorted_score.tolist()[:k])
+                doc_indices.append(sorted_id.tolist()[:k])
+            return doc_scores, doc_indices
+        else:
+            for i in range(result.shape[0]):
+
+                sorted_score = np.sort(result[i, :])[::-1]
+                sorted_id = np.argsort(result[i, :])[::-1]
+                boundary = []
+
+                ## 해당 query의 가장 높은 score(sorted_score[0])의 x0.85까지의 점수만 받는다.
+                for z in sorted_score:
+                    if z >= sorted_score[0] * self.topR:
+                        boundary.append(True)
+                    else:
+                        boundary.append(False)
+
+                if len(sorted_score[boundary]) <= k:
+                    doc_scores.append(sorted_score[boundary])
+                    doc_indices.append(sorted_id[boundary])
+                else:
+                    doc_scores.append(sorted_score[:k])
+                    doc_indices.append(sorted_id[:k])
+            return doc_scores, doc_indices
 
     def retrieve_faiss(
         self, query_or_dataset: Union[str, Dataset], topk: Optional[int] = 1
@@ -403,403 +417,18 @@ class SparseRetrieval:
         return D.tolist(), I.tolist()
 
 
-class DenseRetrieval:
-    def __init__(
-        self, args, data_path: str, num_neg: int, tokenizer, p_encoder, q_encoder
-    ):
-        """[summary] : encoder를 활용해 query와 passage를 embedding하고 embedding된 vector를 유사도 검색에 활용
-
-        Args:
-            args : encoder를 train할 때 필요한 arguments
-            data_path : 학습을 위한 MRC dataset의 path
-            num_neg : Negative sampling 개수
-            tokenizer : Pretrained tokenizer
-            p_encoder : query를 embedding 할 때 사용할 모델
-            q_encoder : passage를 embedding 할 때 사용할 모델
-        """
-        self.args = args
-
-        self.train_dataset = load_from_disk(data_path)["train"]
-        self.valid_dataset = load_from_disk(data_path)["validation"]
-        self.p_dataset = self.train_dataset["context"] + self.valid_dataset["context"]
-        self.q_dataset = self.train_dataset["question"] + self.valid_dataset["question"]
-
-        self.num_neg = num_neg
-        self.tokenizer = tokenizer
-        self.p_encoder = p_encoder
-        self.q_encoder = q_encoder
-        self.train_dataloader = None
-        self.valid_dataloader = None
-
-        self.prepare_negative(num_neg=num_neg)
-
-    def prepare_negative(self, num_neg=3, tokenizer=None):
-        """
-        [summary] : Negative Sampling을 통해 dataset을 구성
-        """
-
-        if tokenizer is None:
-            tokenizer = self.tokenizer
-
-        corpus = np.array(list(set([example for example in self.p_dataset])))
-        p_with_neg = []
-
-        for p_positive in self.p_dataset:
-            while True:
-                neg_idx = np.random.randint(len(corpus), size=num_neg)
-
-                if p_positive not in corpus[neg_idx]:
-                    p_neg = corpus[neg_idx]
-
-                    p_with_neg.append(p_positive)
-                    p_with_neg.extend(p_neg)
-                    break
-
-        q_seqs = tokenizer(
-            self.q_dataset,
-            padding="max_length",
-            truncation=True,
-            return_tensors="pt",
-            return_token_type_ids=False,
-        )
-
-        p_seqs = tokenizer(
-            p_with_neg,
-            padding="max_length",
-            truncation=True,
-            return_tensors="pt",
-            return_token_type_ids=False,
-        )
-
-        max_len = p_seqs["input_ids"].size(-1)
-        p_seqs["input_ids"] = p_seqs["input_ids"].view(-1, num_neg + 1, max_len)
-        p_seqs["attention_mask"] = p_seqs["attention_mask"].view(
-            -1, num_neg + 1, max_len
-        )
-
-        train_dataset = TensorDataset(
-            p_seqs["input_ids"],
-            p_seqs["attention_mask"],
-            q_seqs["input_ids"],
-            q_seqs["attention_mask"],
-        )
-
-        self.train_dataloader = DataLoader(
-            train_dataset,
-            shuffle=True,
-            batch_size=self.args.per_device_train_batch_size,
-        )
-
-        valid_seqs = tokenizer(
-            self.p_dataset,
-            padding="max_length",
-            truncation=True,
-            return_tensors="pt",
-            return_token_type_ids=False,
-        )
-        valid_dataset = TensorDataset(
-            valid_seqs["input_ids"],
-            valid_seqs["attention_mask"],
-        )
-        self.valid_dataloader = DataLoader(
-            valid_dataset, batch_size=self.args.per_device_train_batch_size
-        )
-
-    def train(self, args=None):
-        if args is None:
-            args = self.args
-        batch_size = args.per_device_train_batch_size
-
-        no_decay = ["bias", "LayerNorm.weight"]
-        optimizer_grouped_parameters = [
-            {
-                "params": [
-                    p
-                    for n, p in self.p_encoder.named_parameters()
-                    if not any(nd in n for nd in no_decay)
-                ],
-                "weight_decay": args.weight_decay,
-            },
-            {
-                "params": [
-                    p
-                    for n, p in self.p_encoder.named_parameters()
-                    if any(nd in n for nd in no_decay)
-                ],
-                "weight_decay": 0.0,
-            },
-            {
-                "params": [
-                    p
-                    for n, p in self.q_encoder.named_parameters()
-                    if not any(nd in n for nd in no_decay)
-                ],
-                "weight_decay": args.weight_decay,
-            },
-            {
-                "params": [
-                    p
-                    for n, p in self.q_encoder.named_parameters()
-                    if any(nd in n for nd in no_decay)
-                ],
-                "weight_decay": 0.0,
-            },
-        ]
-        optimizer = AdamW(
-            optimizer_grouped_parameters, lr=args.learning_rate, eps=args.adam_epsilon
-        )
-        t_total = (
-            len(self.train_dataloader)
-            // args.gradient_accumulation_steps
-            * args.num_train_epochs
-        )
-        scheduler = get_linear_schedule_with_warmup(
-            optimizer, num_warmup_steps=args.warmup_steps, num_training_steps=t_total
-        )
-
-        global_step = 0
-
-        self.p_encoder.zero_grad()
-        self.q_encoder.zero_grad()
-        torch.cuda.empty_cache()
-
-        train_iterator = tqdm(range(int(args.num_train_epochs)), desc="Epoch")
-
-        for _ in train_iterator:
-            with tqdm(self.train_dataloader, unit="batch") as tepoch:
-                for batch in tepoch:
-                    self.p_encoder.train()
-                    self.q_encoder.train()
-
-                    targets = torch.zeros(batch_size).long().to(args.device)
-
-                    p_inputs = {
-                        "input_ids": batch[0]
-                        .view(batch_size * (self.num_neg + 1), -1)
-                        .to(args.device),
-                        "attention_mask": batch[1]
-                        .view(batch_size * (self.num_neg + 1), -1)
-                        .to(args.device),
-                    }
-
-                    q_inputs = {
-                        "input_ids": batch[2].to(args.device),
-                        "attention_mask": batch[3].to(args.device),
-                    }
-
-                    p_outputs = self.p_encoder(**p_inputs)
-                    q_outputs = self.q_encoder(**q_inputs)
-
-                    p_outputs = p_outputs.view(batch_size, -1, self.num_neg + 1)
-                    q_outputs = q_outputs.view(batch_size, 1, -1)
-
-                    sim_scores = torch.bmm(q_outputs, p_outputs).squeeze()
-                    sim_scores = sim_scores.view(batch_size, -1)
-                    sim_scores = F.log_softmax(sim_scores, dim=1)
-
-                    loss = F.nll_loss(sim_scores, targets)
-                    tepoch.set_postfix(loss=f"{str(loss.item())}")
-
-                    loss.backward()
-                    optimizer.step()
-                    scheduler.step()
-
-                    self.p_encoder.zero_grad()
-                    self.q_encoder.zero_grad()
-
-                    global_step += 1
-
-                    torch.cuda.empty_cache()
-
-                    del p_inputs, q_inputs
-
-    def get_relevant_doc(
-        self,
-        query: str,
-        k: Optional[int] = 1,
-        args=None,
-        p_encoder=None,
-        q_encoder=None,
-    ) -> Tuple[List, List]:
-        """[summary] : query가 1개 일 때 top-k개의 passage를 선택한다.
-
-        Args:
-            qurey : 1개의 질문
-            k : 선택할 passage의 개수
-        """
-        if args is None:
-            args = self.args
-
-        if p_encoder is None:
-            p_encoder = self.p_encoder
-
-        if q_encoder is None:
-            q_encoder = self.q_encoder
-
-        with torch.no_grad():
-            p_encoder.eval()
-            q_encoder.eval()
-
-            q_seq = self.tokenizer(
-                [query], padding=True, truncation=True, return_tensors="pt"
-            ).to(args.device)
-            q_emb = q_encoder(**q_seq).to("cpu")
-
-            p_embs = []
-
-            for batch in tqdm(self.valid_dataloader):
-                batch = tuple(t.to(args.device) for t in batch)
-                p_inputs = {"input_ids": batch[0], "attention_mask": batch[1]}
-
-                p_emb = p_encoder(**p_inputs).to("cpu")
-                p_embs.append(p_emb)
-
-        p_embs = torch.stack(p_embs, dim=0).view((len(self.valid_dataloader), -1))
-
-        dot_prod_scores = torch.matmul(q_emb, torch.transpose(p_embs, 0, 1))
-        rank = torch.argsort(dot_prod_scores, dim=1, descending=True).squeeze()
-
-        return rank[:k]
-
-    def get_relevant_doc_bulk(
-        self,
-        qureies: List,
-        k: Optional[int] = 1,
-        args=None,
-        p_encoder=None,
-        q_encoder=None,
-    ) -> Tuple[List, List]:
-        pass
-
-
-# if __name__ == "__main__":
-
-#     import argparse
-
-#     parser = argparse.ArgumentParser(description="")
-#     parser.add_argument(
-#         "--dataset_name", metavar="./data/train_dataset", type=str, help=""
-#     )
-#     parser.add_argument(
-#         "--model_name_or_path",
-#         metavar="bert-base-multilingual-cased",
-#         type=str,
-#         help="",
-#     )
-#     parser.add_argument("--data_path", metavar="./data", type=str, help="")
-#     parser.add_argument(
-#         "--context_path", metavar="wikipedia_documents", type=str, help=""
-#     )
-#     parser.add_argument("--use_faiss", metavar=False, type=bool, help="")
-
-#     args = parser.parse_args()
-
-#     # Test sparse
-#     org_dataset = load_from_disk(args.dataset_name)
-# full_ds = concatenate_datasets(
-#     [
-#         org_dataset["train"].flatten_indices(),
-#         org_dataset["validation"].flatten_indices(),
-#     ]
-# )  # train dev 를 합친 4192 개 질문에 대해 모두 테스트
-#     print("*" * 40, "query dataset", "*" * 40)
-#     print(full_ds)
-
-#     from transformers import AutoTokenizer
-
-#     tokenizer = AutoTokenizer.from_pretrained(
-#         args.model_name_or_path,
-#         use_fast=False,
-#     )
-
-#     retriever = SparseRetrieval(
-#         tokenize_fn=tokenizer.tokenize,
-#         data_path=args.data_path,
-#         context_path=args.context_path,
-#     )
-
-#     query = "대통령을 포함한 미국의 행정부 견제권을 갖는 국가 기관은?"
-
-#     if args.use_faiss:
-
-#         # test single query
-#         with timer("single query by faiss"):
-#             scores, indices = retriever.retrieve_faiss(query)
-
-#         # test bulk
-#         with timer("bulk query by exhaustive search"):
-#             df = retriever.retrieve_faiss(full_ds)
-#             df["correct"] = df["original_context"] == df["context"]
-
-#             print("correct retrieval result by faiss", df["correct"].sum() / len(df))
-
-#     else:
-#         with timer("bulk query by exhaustive search"):
-#             df = retriever.retrieve(full_ds)
-#             df["correct"] = df["original_context"] == df["context"]
-#             print(
-#                 "correct retrieval result by exhaustive search",
-#                 df["correct"].sum() / len(df),
-#             )
-
-#         with timer("single query by exhaustive search"):
-#             scores, indices = retriever.retrieve(query)
-
 if __name__ == "__main__":
+    model_name_or_path = "klue/bert-base"
+    data_path = "/opt/ml/data"
+    context_path = "wikipedia_documents.json"
 
-    import argparse
+    tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
+    datasets = load_from_disk("/opt/ml/data/train_dataset")
 
-    parser = argparse.ArgumentParser(description="")
-    parser.add_argument(
-        "--dataset_name", metavar="./data/train_dataset", type=str, help=""
+    retriever = SparseRetrievalTFIDF(
+        tokenize_fn=tokenizer.tokenize,
+        data_path=data_path,
+        context_path=context_path,
+        topR=0.85,
     )
-    parser.add_argument(
-        "--model_name_or_path",
-        metavar="bert-base-multilingual-cased",
-        type=str,
-        help="",
-    )
-    parser.add_argument("--data_path", metavar="./data", type=str, help="")
-    parser.add_argument(
-        "--context_path", metavar="wikipedia_documents", type=str, help=""
-    )
-    parser.add_argument("--use_faiss", metavar=False, type=bool, help="")
-
-    args = parser.parse_args()
-    dense_args = TrainingArguments(
-        output_dir="dense_retireval",
-        evaluation_strategy="epoch",
-        learning_rate=3e-4,
-        per_device_train_batch_size=2,
-        per_device_eval_batch_size=2,
-        num_train_epochs=2,
-        weight_decay=0.01,
-    )
-
-    model_checkpoint = args.model_name_or_path
-
-    tokenizer = AutoTokenizer.from_pretrained(model_checkpoint)
-    p_encoder = RobertaEncoder.from_pretrained(model_checkpoint).to(dense_args.device)
-    q_encoder = RobertaEncoder.from_pretrained(model_checkpoint).to(dense_args.device)
-
-    dense_retriever = DenseRetrieval(
-        args=dense_args,
-        data_path=args.dataset_name,
-        num_neg=3,
-        tokenizer=tokenizer,
-        p_encoder=p_encoder,
-        q_encoder=q_encoder,
-    )
-
-    dense_retriever.train()
-
-    query = "대통령을 포함한 미국의 행정부 견제권을 갖는 국가 기관은?"
-
-    results = dense_retriever.get_relevant_doc(query, k=5)
-
-    print(f"[Search Query] {query}\n")
-
-    indices = results.tolist()
-    for i, idx in enumerate(indices):
-        print(f"Top-{i + 1}th Passage (Index {idx})")
-        print(dense_retriever.p_dataset["context"][idx])
+    retriever.get_sparse_embedding()

@@ -33,7 +33,9 @@ from transformers import (
 
 from utils_qa import postprocess_qa_predictions, check_no_error
 from trainer_qa import QuestionAnsweringTrainer
-from retrieval import SparseRetrieval
+from retriever.elastic_search import run_elastic_sparse_retrieval
+from retriever.retriever_sparse_BM25 import SparseRetrievalBM25
+from retriever.retriever_dense import DenseRetrieval
 
 from arguments import (
     ModelArguments,
@@ -41,7 +43,9 @@ from arguments import (
 )
 
 import utils
-import elastic_search
+import wandb
+
+from retriever.model_encoder import BertEncoder
 
 
 logger = logging.getLogger(__name__)
@@ -97,23 +101,87 @@ def main():
     )
 
     # True일 경우 : run passage retrieval
-    if data_args.eval_retrieval == 'sparse':
+    if data_args.eval_retrieval == "sparse":
         datasets = run_sparse_retrieval(
             tokenizer.tokenize,
             datasets,
             training_args,
             data_args,
         )
-    elif data_args.eval_retrieval == 'elastic_sparse':
-        datasets = elastic_search.run_elastic_sparse_retrieval(
+    elif data_args.eval_retrieval == "elastic_sparse":
+        datasets = run_elastic_sparse_retrieval(
             datasets,
             training_args,
             data_args,
+        )
+    elif data_args.eval_retrieval == "dense":
+        datasets = run_dense_retrieval(
+            "klue/bert-base", datasets, training_args, data_args
         )
 
     # eval or predict mrc model
     if training_args.do_eval or training_args.do_predict:
         run_mrc(data_args, training_args, model_args, datasets, tokenizer, model)
+
+
+def run_dense_retrieval(
+    model_checkpoint: str,
+    datasets: DatasetDict,
+    training_args: TrainingArguments,
+    data_args: DataTrainingArguments,
+):
+    dense_tokenizer = AutoTokenizer.from_pretrained(model_checkpoint)
+    p_encoder = BertEncoder.from_pretrained(model_checkpoint).to(training_args.device)
+    q_encoder = BertEncoder.from_pretrained(model_checkpoint).to(training_args.device)
+    if data_args.num_neg != 0:
+        print("change batch size default(8) to 2 !!!")
+        training_args.per_device_train_batch_size = 2
+    retriever = DenseRetrieval(
+        training_args,
+        data_path="/opt/ml/data/train_dataset",
+        num_neg=data_args.num_neg,
+        tokenizer=dense_tokenizer,
+        p_encoder=p_encoder,
+        q_encoder=q_encoder,
+        save_dir="./encoders",
+    )
+
+    retriever.load_encoder()
+    df = retriever.retrieve(
+        datasets["validation"],
+        "/opt/ml/data/wiki_embedding.csv",
+        topk=data_args.top_k_retrieval,
+    )
+
+    # test data 에 대해선 정답이 없으므로 id question context 로만 데이터셋이 구성됩니다.
+    if training_args.do_predict:
+        f = Features(
+            {
+                "context": Value(dtype="string", id=None),
+                "id": Value(dtype="string", id=None),
+                "question": Value(dtype="string", id=None),
+            }
+        )
+
+    # train data 에 대해선 정답이 존재하므로 id question context answer 로 데이터셋이 구성됩니다.
+    elif training_args.do_eval:
+        f = Features(
+            {
+                "answers": Sequence(
+                    feature={
+                        "text": Value(dtype="string", id=None),
+                        "answer_start": Value(dtype="int32", id=None),
+                    },
+                    length=-1,
+                    id=None,
+                ),
+                "context": Value(dtype="string", id=None),
+                "id": Value(dtype="string", id=None),
+                "question": Value(dtype="string", id=None),
+            }
+        )
+    datasets = DatasetDict({"validation": Dataset.from_pandas(df, features=f)})
+    return datasets
 
 
 def run_sparse_retrieval(
@@ -126,8 +194,11 @@ def run_sparse_retrieval(
 ) -> DatasetDict:
 
     # Query에 맞는 Passage들을 Retrieval 합니다.
-    retriever = SparseRetrieval(
-        tokenize_fn=tokenize_fn, data_path=data_path, context_path=context_path
+    retriever = SparseRetrievalBM25(
+        tokenize_fn=tokenize_fn,
+        data_path=data_path,
+        context_path=context_path,
+        topR=data_args.topR,
     )
     retriever.get_sparse_embedding()
 
@@ -138,7 +209,6 @@ def run_sparse_retrieval(
         )
     else:
         df = retriever.retrieve(datasets["validation"], topk=data_args.top_k_retrieval)
-    
 
     # test data 에 대해선 정답이 없으므로 id question context 로만 데이터셋이 구성됩니다.
     if training_args.do_predict:
@@ -208,7 +278,7 @@ def run_mrc(
             stride=data_args.doc_stride,
             return_overflowing_tokens=True,
             return_offsets_mapping=True,
-            return_token_type_ids=False,#utils.is_not_roberta(tokenizer), # roberta모델을 사용할 경우 False, bert를 사용할 경우 True로 표기해야합니다.
+            return_token_type_ids=False,  # utils.is_not_roberta(tokenizer), # roberta모델을 사용할 경우 False, bert를 사용할 경우 True로 표기해야합니다.
             padding="max_length" if data_args.pad_to_max_length else False,
         )
 
@@ -289,6 +359,20 @@ def run_mrc(
 
     def compute_metrics(p: EvalPrediction) -> Dict:
         return metric.compute(predictions=p.predictions, references=p.label_ids)
+
+    if training_args.do_eval:
+        wandb_name = model_args.model_name_or_path
+        wandb_name += (
+            "-" + model_args.wandb_tag if model_args.wandb_tag is not None else ""
+        )
+        wandb_name += "-InferEval"
+        wandb.init(
+            entity="klue-level2-nlp-02",
+            project=model_args.wandb_project,
+            name=wandb_name,
+            group=model_args.model_name_or_path,
+        )
+        wandb.config.update(training_args)
 
     print("init trainer...")
     # Trainer 초기화

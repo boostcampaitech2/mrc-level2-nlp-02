@@ -1,0 +1,33 @@
+{
+  'settings':{
+    'number_of_shards':1,
+    'number_of_replicas':1,
+    'analysis':{
+      'analyzer': {
+        'nori_analyzer':{
+          'type': 'custom',
+          'tokenizer': 'nori_tokenizer',
+          'filter' : 'cj_bigrams_filter'
+        }
+      },
+      'filter': {
+        'cj_bigrams_filter': {
+          'type': 'cjk_bigram',
+          'ignored_scripts': [
+            'hiragana',
+            'katakana'
+          ],
+          'output_unigrams': 'true'
+        }
+      },
+    }
+  },
+  'mappings':{
+    'properties':{
+      'text':{
+        'type':'text',
+        'analyzer': 'nori_analyzer'
+      }
+    }
+  }
+}

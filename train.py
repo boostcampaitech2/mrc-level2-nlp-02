@@ -21,7 +21,7 @@ from tokenizers.models import WordPiece
 
 from utils_qa import postprocess_qa_predictions, check_no_error
 from trainer_qa import QuestionAnsweringTrainer
-from retrieval import SparseRetrieval
+from retriever.retriever_dense import DenseRetrieval
 
 from arguments import (
     ModelArguments,
@@ -29,7 +29,7 @@ from arguments import (
 )
 
 import utils
-
+import wandb
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +47,6 @@ def main():
     # [참고] argument를 manual하게 수정하고 싶은 경우에 아래와 같은 방식을 사용할 수 있습니다
     # training_args.per_device_train_batch_size = 4
     # print(training_args.per_device_train_batch_size)
-    breakpoint()
 
     print(f"model is from {model_args.model_name_or_path}")
     print(f"data is from {data_args.dataset_name}")
@@ -97,7 +96,6 @@ def main():
         type(tokenizer),
         type(model),
     )
-    breakpoint()
     # do_train mrc model 혹은 do_eval mrc model
     if training_args.do_train or training_args.do_eval:
         run_mrc(data_args, training_args, model_args, datasets, tokenizer, model)
@@ -325,6 +323,18 @@ def run_mrc(
         post_process_function=post_processing_function,
         compute_metrics=compute_metrics,
     )
+
+    wandb_name = model_args.model_name_or_path
+    wandb_name += '-' + model_args.wandb_tag if model_args.wandb_tag is not None else ''
+    wandb_name +='-train' if training_args.do_train else '-trainEval'
+    print(wandb_name)
+    wandb.init(
+        entity="klue-level2-nlp-02",
+        project="mrc_project_model",
+        name=wandb_name,
+        group=model_args.model_name_or_path
+    )
+    wandb.config.update(training_args)
 
     # Training
     if training_args.do_train:

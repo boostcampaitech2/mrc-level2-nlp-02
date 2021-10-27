@@ -1,11 +1,11 @@
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 
 @dataclass
 class ModelArguments:
     """
-    Arguments pertaining to which model/config/tokenizer we are going to fine-tune from. 
+    Arguments pertaining to which model/config/tokenizer we are going to fine-tune from.
     """
 
     model_name_or_path: str = field(
@@ -25,6 +25,14 @@ class ModelArguments:
         metadata={
             "help": "Pretrained tokenizer name or path if not the same as model_name"
         },
+    )
+    wandb_tag: Optional[str] = field(
+        default=None,
+        metadata={"help": "wandb tag string"},
+    )
+    wandb_project: Optional[str] = field(
+        default=None,
+        metadata={"help": "wandb project name"},
     )
 
 
@@ -75,8 +83,10 @@ class DataTrainingArguments:
         },
     )
     eval_retrieval: str = field(
-        default='sparse',
-        metadata={"help": "Choose which passage retrieval to be used.[sparse, elastic_sparse]."},
+        default="sparse",
+        metadata={
+            "help": "Choose which passage retrieval to be used.[sparse, elastic_sparse]."
+        },
     )
     num_clusters: int = field(
         default=64, metadata={"help": "Define how many clusters to use for faiss."}
@@ -89,4 +99,15 @@ class DataTrainingArguments:
     )
     use_faiss: bool = field(
         default=False, metadata={"help": "Whether to build with faiss"}
+    )
+    num_neg: int = field(
+        default=0, metadata={"help": "Define how many negative sampling dataset"}
+    )
+    topR: float = field(
+        default=0,
+        metadata={"help": "Filter passage by (top score * topR)"},
+    )
+    reconfig: bool = field(
+        default=False,
+        metadata={"help": "Elastic search re-config flag"},
     )

@@ -1,0 +1,26 @@
+{
+  "settings": {
+    "analysis": {
+      "analyzer": {
+        "nori_analyzer": {
+          "tokenizer": "nori_tokenizer",
+          "filter": [ "length_2" ]
+        }
+      },
+      "filter": {
+        "length_2": {
+          "type": "length",
+          "min": 2
+        }
+      }
+    }
+  },
+  'mappings':{
+    'properties':{
+      'text':{
+        'type':'text',
+        'analyzer': 'nori_analyzer'
+      }
+    }
+  }
+}

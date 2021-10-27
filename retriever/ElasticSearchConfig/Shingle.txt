@@ -1,0 +1,30 @@
+{
+  'settings':{
+    'number_of_shards':1,
+    'number_of_replicas':1,
+    'analysis':{
+      'analyzer': {
+        'nori_analyzer':{
+          'type': 'custom',
+          'tokenizer': 'nori_tokenizer',
+          'filter': [ 'my_shingle_f' ]
+          }
+        },
+      'filter': {
+        'my_shingle_f': {
+          'type': 'shingle',
+          'min_shingle_size': 2,
+          'max_shingle_size': 3
+          }
+        }
+    }
+  },
+  'mappings':{
+    'properties':{
+      'text':{
+        'type':'text',
+        'analyzer': 'nori_analyzer'
+      }
+    }
+  }
+}

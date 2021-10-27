@@ -100,7 +100,6 @@ class DataTrainingArguments:
     use_faiss: bool = field(
         default=False, metadata={"help": "Whether to build with faiss"}
     )
-    # # # 추가 #
     train_retrieval: bool = field(
         default=True,
         metadata={"help": "Whether to train sparse/dense embedding (prepare for retrieval)."},
@@ -115,7 +114,7 @@ class DataTrainingArguments:
     )
     preprocessing_pattern:str = field(
         default=None,
-        metabdata={"help" : "preprocessing(e.g. 123)"}
+        metadata={"help" : "preprocessing(e.g. 123)"},
     )
     add_special_tokens_flag:bool = field(
         default=False,

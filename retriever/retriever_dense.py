@@ -1,38 +1,31 @@
-from optparse import Option
 import os
-import json
-from plistlib import Data
 import time
-import faiss
-import pickle
+
 import numpy as np
 import pandas as pd
 
 from tqdm.auto import tqdm
 from contextlib import contextmanager
-from typing import List, Tuple, NoReturn, Any, Optional, Union
+from typing import List, Tuple, Optional
 
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, TensorDataset
 
-from sklearn.feature_extraction.text import TfidfVectorizer
-
 from datasets import (
     Dataset,
     load_from_disk,
-    concatenate_datasets,
 )
 
 from transformers import (
     AutoTokenizer,
-    AutoConfig,
     AdamW,
     get_linear_schedule_with_warmup,
     TrainingArguments,
 )
 
-from model_encoder import RobertaEncoder, BertEncoder
+from retriever.model_encoder import BertEncoder
+
 
 @contextmanager
 def timer(name):
@@ -53,6 +46,7 @@ class DenseRetrieval:
         save_dir: str,
     ):
         """[summary] : encoder를 활용해 query와 passage를 embedding하고 embedding된 vector를 유사도 검색에 활용
+
         Args:
             args : encoder를 train할 때 필요한 arguments
             data_path : 학습을 위한 MRC dataset의 path
@@ -64,13 +58,8 @@ class DenseRetrieval:
         """
         self.args = args
 
-        with open(os.path.join('/opt/ml/data/wikipedia_documents.json'), "r", encoding="utf-8") as f:
-            wiki = json.load(f)
-        wiki_contexts = list(
-        dict.fromkeys([v["text"] for v in wiki.values()])
-        )  # set 은 매번 순서가 바뀌므로
-        print(f"Lengths of unique contexts : {len(wiki_contexts)}")
-        self.wiki_texts = list(wiki_contexts)
+        df = pd.read_json("/opt/ml/data/wikipedia_documents.json").transpose()
+        self.wiki_texts = list(df["text"])
 
         self.train_dataset = load_from_disk(data_path)["train"]
         self.valid_dataset = load_from_disk(data_path)["validation"]
@@ -173,7 +162,7 @@ class DenseRetrieval:
             padding="max_length",
             truncation=True,
             return_tensors="pt",
-            return_token_type_ids=False,
+            # return_token_type_ids=False,
         )
 
         p_seqs = tokenizer(
@@ -181,7 +170,7 @@ class DenseRetrieval:
             padding="max_length",
             truncation=True,
             return_tensors="pt",
-            return_token_type_ids=False,
+            # return_token_type_ids=False,
         )
 
         max_len = p_seqs["input_ids"].size(-1)
@@ -189,12 +178,17 @@ class DenseRetrieval:
         p_seqs["attention_mask"] = p_seqs["attention_mask"].view(
             -1, num_neg + 1, max_len
         )
+        p_seqs["token_type_ids"] = p_seqs["token_type_ids"].view(
+            -1, num_neg + 1, max_len
+        )
 
         train_dataset = TensorDataset(
             p_seqs["input_ids"],
             p_seqs["attention_mask"],
+            p_seqs["token_type_ids"],
             q_seqs["input_ids"],
             q_seqs["attention_mask"],
+            q_seqs["token_type_ids"],
         )
 
         self.train_dataloader = DataLoader(
@@ -225,6 +219,7 @@ class DenseRetrieval:
         """
         if args is None:
             args = self.args
+
         print(f"wiki text size : {len(self.wiki_texts)}")
 
         wiki_seqs = self.tokenizer(
@@ -262,7 +257,7 @@ class DenseRetrieval:
 
         emb_df = pd.DataFrame(p_embs)
 
-        emb_df.to_csv("/opt/ml/data/wiki_embedding.csv", index=False)
+        emb_df.to_csv("/opt/ml/data/wiki_embedding_num_neg_3.csv", index=False)
 
     def retrieve(
         self,
@@ -272,17 +267,38 @@ class DenseRetrieval:
     ) -> pd.DataFrame:
         """
         [summary] : 입력받은 쿼리와 wiki embedding vector의 dot product score를 구하고 topk개의 passage를 선택해서 출력
+
         wiki_embedding : wiki embedding vector가 저장되어있는 파일의 path
         """
         print("start dense retrieve!!!")
 
-        if wiki_embedding_path is None :
-            df = pd.read_csv("/opt/ml/data/wiki_embedding.csv")
-        else :
-            df = pd.read_csv(wiki_embedding_path)
+        df = pd.read_csv(wiki_embedding_path)
+        p_embs = torch.Tensor(df.values)
 
-        with timer("query exhaustive search"):
-                doc_scores, doc_indices = self.get_relevant_doc_bulk(queries['question'], df, k=topk)
+        print(f"passage size : {p_embs.shape}")
+
+        self.q_encoder.to("cuda")
+
+        with torch.no_grad():
+            q_seqs = self.tokenizer(
+                queries["question"],
+                padding=True,
+                truncation=True,
+                return_tensors="pt",
+                return_token_type_ids=False,
+            ).to("cuda")
+            q_embs = self.q_encoder(**q_seqs).to("cpu")
+
+        sim_scores = torch.matmul(q_embs, p_embs.T)  # (quries, wiki_data_len)
+
+        doc_scores = []
+        doc_indices = []
+
+        for i in range(len(queries)):
+            rank = torch.argsort(sim_scores[i], dim=0, descending=True)
+            doc_scores.append(sim_scores[i][rank[:topk]])
+            doc_indices.append(rank[:topk])
+
         # Retrieve한 Passage를 pd.DataFrame으로 반환합니다.
         total = []
         for idx, example in enumerate(tqdm(queries, desc="Dense retrieval: ")):
@@ -433,11 +449,15 @@ class DenseRetrieval:
                         "attention_mask": batch[1]
                         .view(batch_size * (self.num_neg + 1), -1)
                         .to(args.device),
+                        "token_type_ids": batch[2]
+                        .view(batch_size * (self.num_neg + 1), -1)
+                        .to(args.device),
                     }
 
                     q_inputs = {
-                        "input_ids": batch[2].to(args.device),
-                        "attention_mask": batch[3].to(args.device),
+                        "input_ids": batch[3].to(args.device),
+                        "attention_mask": batch[4].to(args.device),
+                        "token_type_ids": batch[5].to(args.device),
                     }
 
                     p_outputs = self.p_encoder(**p_inputs)
@@ -450,6 +470,7 @@ class DenseRetrieval:
 
                     sim_scores = torch.bmm(q_outputs, p_outputs).squeeze()
                     sim_scores = sim_scores.view(batch_size, -1)
+                    breakpoint()
                     sim_scores = F.log_softmax(sim_scores, dim=1)
 
                     loss = F.nll_loss(sim_scores, targets)
@@ -595,6 +616,7 @@ class DenseRetrieval:
         q_encoder=None,
     ) -> Tuple[List, List]:
         """[summary] : query가 1개 일 때 top-k개의 passage를 선택한다.
+
         Args:
             qurey : 1개의 질문
             k : 선택할 passage의 개수
@@ -644,46 +666,61 @@ class DenseRetrieval:
 
     def get_relevant_doc_bulk(
         self,
-        queries: Dataset,
-        df: pd.DataFrame,
+        queries: List,
         k: Optional[int] = 1,
         args=None,
+        p_encoder=None,
+        q_encoder=None,
     ) -> Tuple[List, List]:
-        
         if args is None:
             args = self.args
 
-        p_embs = torch.Tensor(df.values)
+        if p_encoder is None:
+            p_encoder = self.p_encoder
 
-        print(f"passage size : {df.shape}")
+        if q_encoder is None:
+            q_encoder = self.q_encoder
 
-        self.q_encoder.to("cuda")
-        
         with torch.no_grad():
+            p_encoder.eval()
+            q_encoder.eval()
+
             q_seqs = self.tokenizer(
                 queries,
                 padding=True,
                 truncation=True,
                 return_tensors="pt",
                 return_token_type_ids=False,
-            ).to("cuda")
-            q_embs = self.q_encoder(**q_seqs).to("cpu")
+            ).to(args.device)
+            q_embs = q_encoder(**q_seqs).to("cpu")  # (num_queries, emb_dim)
 
-        sim_scores = torch.matmul(q_embs, p_embs.T)  # (quries, wiki_data_len)
+            p_embs = []
+
+            for batch in tqdm(self.valid_dataloader):
+                batch = tuple(t.to(args.device) for t in batch)
+                p_inputs = {"input_ids": batch[0], "attention_mask": batch[1]}
+
+                p_emb = p_encoder(**p_inputs).to("cpu")
+                p_embs.append(p_emb)
+        p_embs = torch.stack(p_embs, dim=0).view(len(self.valid_dataloader.dataset), -1)
 
         doc_scores = []
         doc_indices = []
-
         for i in range(len(queries)):
-            rank = torch.argsort(sim_scores[i], dim=0, descending=True)
-            doc_scores.append(sim_scores[i][rank[:k]])
+            dot_prod_scores = torch.matmul(
+                q_embs[i].unsqueeze(0), torch.transpose(p_embs, 0, 1)
+            )  # (1, num_passage)
+            rank = torch.argsort(dot_prod_scores, dim=1, descending=True).squeeze()
+            doc_scores.append(dot_prod_scores.squeeze()[:k])
             doc_indices.append(rank[:k])
+
         return doc_scores, doc_indices
 
+
 if __name__ == "__main__":
-    model_name_or_path="klue/bert-base"
-    data_path="/opt/ml/data"
-    context_path="wikipedia_documents.json"
+    model_name_or_path = "klue/bert-base"
+    data_path = "/opt/ml/data"
+    context_path = "wikipedia_documents.json"
 
     dense_args = TrainingArguments(
         output_dir="dense_retireval",
@@ -695,22 +732,22 @@ if __name__ == "__main__":
         weight_decay=0.01,
     )
     import argparse
+
     args = argparse.Namespace(
         dataset_name="../data",
         model_name_or_path="klue/bert-base",
         data_path="/opt/ml/data",
         context_path="wikipedia_documents.json",
         save_dir="./encoders",
-        num_neg=0,  
+        num_neg=0,
     )
-
 
     p_encoder = BertEncoder.from_pretrained(model_name_or_path).to(dense_args.device)
     q_encoder = BertEncoder.from_pretrained(model_name_or_path).to(dense_args.device)
     tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
-    datasets = load_from_disk('/opt/ml/data/train_dataset') 
+    datasets = load_from_disk("/opt/ml/data/train_dataset")
 
-    klue_dense= DenseRetrieval(
+    klue_dense = DenseRetrieval(
         args=dense_args,
         data_path="../data/train_dataset",
         num_neg=args.num_neg,
@@ -721,7 +758,7 @@ if __name__ == "__main__":
     )
 
     klue_dense.load_encoder()
-    klue_dense.make_wiki_embedding(64)    
+    klue_dense.make_wiki_embedding(64)
     # wiki_embedding = pd.read_csv('/opt/ml/data/wiki_embedding.csv')
     # max_K = 10
     # klue_dense.get_relevant_doc_bulk(datasets['validation'], wiki_embedding, k=max_K)

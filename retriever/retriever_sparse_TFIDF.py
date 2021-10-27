@@ -1,7 +1,5 @@
-from optparse import Option
 import os
 import json
-from plistlib import Data
 import time
 import faiss
 import pickle
@@ -12,24 +10,15 @@ from tqdm.auto import tqdm
 from contextlib import contextmanager
 from typing import List, Tuple, NoReturn, Any, Optional, Union
 
-import torch
-import torch.nn.functional as F
-from torch.utils.data import DataLoader, TensorDataset
-
 from sklearn.feature_extraction.text import TfidfVectorizer
 
 from datasets import (
     Dataset,
     load_from_disk,
-    concatenate_datasets,
 )
 
 from transformers import (
     AutoTokenizer,
-    AutoConfig,
-    AdamW,
-    get_linear_schedule_with_warmup,
-    TrainingArguments,
 )
 
 
@@ -46,7 +35,7 @@ class SparseRetrievalTFIDF:
         tokenize_fn,
         data_path: Optional[str] = "../data/",
         context_path: Optional[str] = "wikipedia_documents.json",
-        topR: float = 0.0
+        topR: float = 0.0,
     ) -> NoReturn:
 
         """
@@ -65,7 +54,7 @@ class SparseRetrievalTFIDF:
                 Passage들이 묶여있는 파일명입니다.
                 data_path/context_path가 존재해야합니다.
             topR:
-                (Top1 score * topR) 이상의 score를 갖는 passage들만 가져옵니다.            
+                (Top1 score * topR) 이상의 score를 갖는 passage들만 가져옵니다.
 
         Summary:
             Passage 파일을 불러오고 TfidfVectorizer를 선언하는 기능을 합니다.
@@ -87,7 +76,7 @@ class SparseRetrievalTFIDF:
             ngram_range=(1, 2),
             max_features=50000,
         )
-        
+
         self.topR = topR
         self.p_embedding = None  # get_sparse_embedding()로 생성합니다
         self.indexer = None  # build_faiss()로 생성합니다.
@@ -278,7 +267,7 @@ class SparseRetrievalTFIDF:
             result = result.toarray()
         doc_scores = []
         doc_indices = []
-        if self.topR == 0 :
+        if self.topR == 0:
             for i in range(result.shape[0]):
                 sorted_score = np.sort(result[i, :])[::-1]
                 sorted_id = np.argsort(result[i, :])[::-1]
@@ -286,26 +275,26 @@ class SparseRetrievalTFIDF:
                 doc_scores.append(sorted_score.tolist()[:k])
                 doc_indices.append(sorted_id.tolist()[:k])
             return doc_scores, doc_indices
-        else :
+        else:
             for i in range(result.shape[0]):
 
                 sorted_score = np.sort(result[i, :])[::-1]
                 sorted_id = np.argsort(result[i, :])[::-1]
                 boundary = []
-                
+
                 ## 해당 query의 가장 높은 score(sorted_score[0])의 x0.85까지의 점수만 받는다.
                 for z in sorted_score:
-                    if z>=sorted_score[0]*self.topR:
+                    if z >= sorted_score[0] * self.topR:
                         boundary.append(True)
                     else:
                         boundary.append(False)
 
-                if len(sorted_score[boundary])<=k:
+                if len(sorted_score[boundary]) <= k:
                     doc_scores.append(sorted_score[boundary])
                     doc_indices.append(sorted_id[boundary])
                 else:
                     doc_scores.append(sorted_score[:k])
-                    doc_indices.append(sorted_id[:k])                    
+                    doc_indices.append(sorted_id[:k])
             return doc_scores, doc_indices
 
     def retrieve_faiss(
@@ -427,19 +416,19 @@ class SparseRetrievalTFIDF:
 
         return D.tolist(), I.tolist()
 
+
 if __name__ == "__main__":
-    model_name_or_path="klue/bert-base"
-    data_path="/opt/ml/data"
-    context_path="wikipedia_documents.json"
+    model_name_or_path = "klue/bert-base"
+    data_path = "/opt/ml/data"
+    context_path = "wikipedia_documents.json"
 
     tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
-    datasets = load_from_disk('/opt/ml/data/train_dataset') 
-
+    datasets = load_from_disk("/opt/ml/data/train_dataset")
 
     retriever = SparseRetrievalTFIDF(
-        tokenize_fn=tokenizer.tokenize, data_path=data_path, context_path=context_path, topR=0.85
-        )
+        tokenize_fn=tokenizer.tokenize,
+        data_path=data_path,
+        context_path=context_path,
+        topR=0.85,
+    )
     retriever.get_sparse_embedding()
-
-    # df = retriever.retrieve(datasets["validation"], topk=5)
-    # breakpoint()

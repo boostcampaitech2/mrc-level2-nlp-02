@@ -45,7 +45,7 @@ from arguments import (
 import utils
 import wandb
 
-from model_encoder import BertEncoder
+from retriever.model_encoder import BertEncoder
 
 
 logger = logging.getLogger(__name__)
@@ -101,14 +101,14 @@ def main():
     )
 
     # True일 경우 : run passage retrieval
-    if data_args.eval_retrieval == 'sparse':
+    if data_args.eval_retrieval == "sparse":
         datasets = run_sparse_retrieval(
             tokenizer.tokenize,
             datasets,
             training_args,
             data_args,
         )
-    elif data_args.eval_retrieval == 'elastic_sparse':
+    elif data_args.eval_retrieval == "elastic_sparse":
         datasets = run_elastic_sparse_retrieval(
             datasets,
             training_args,
@@ -183,6 +183,7 @@ def run_dense_retrieval(
     datasets = DatasetDict({"validation": Dataset.from_pandas(df, features=f)})
     return datasets
 
+
 def run_sparse_retrieval(
     tokenize_fn: Callable[[str], List[str]],
     datasets: DatasetDict,
@@ -194,7 +195,10 @@ def run_sparse_retrieval(
 
     # Query에 맞는 Passage들을 Retrieval 합니다.
     retriever = SparseRetrievalBM25(
-        tokenize_fn=tokenize_fn, data_path=data_path, context_path=context_path, topR=data_args.topR, median=data_args.med_flag
+        tokenize_fn=tokenize_fn,
+        data_path=data_path,
+        context_path=context_path,
+        topR=data_args.topR,
     )
     retriever.get_sparse_embedding()
 
@@ -205,7 +209,6 @@ def run_sparse_retrieval(
         )
     else:
         df = retriever.retrieve(datasets["validation"], topk=data_args.top_k_retrieval)
-    
 
     # test data 에 대해선 정답이 없으므로 id question context 로만 데이터셋이 구성됩니다.
     if training_args.do_predict:
@@ -275,7 +278,7 @@ def run_mrc(
             stride=data_args.doc_stride,
             return_overflowing_tokens=True,
             return_offsets_mapping=True,
-            return_token_type_ids=False,#utils.is_not_roberta(tokenizer), # roberta모델을 사용할 경우 False, bert를 사용할 경우 True로 표기해야합니다.
+            return_token_type_ids=False,  # utils.is_not_roberta(tokenizer), # roberta모델을 사용할 경우 False, bert를 사용할 경우 True로 표기해야합니다.
             padding="max_length" if data_args.pad_to_max_length else False,
         )
 
@@ -357,15 +360,17 @@ def run_mrc(
     def compute_metrics(p: EvalPrediction) -> Dict:
         return metric.compute(predictions=p.predictions, references=p.label_ids)
 
-    if training_args.do_eval :
+    if training_args.do_eval:
         wandb_name = model_args.model_name_or_path
-        wandb_name += '-' + model_args.wandb_tag if model_args.wandb_tag is not None else ''
-        wandb_name += '-InferEval'
+        wandb_name += (
+            "-" + model_args.wandb_tag if model_args.wandb_tag is not None else ""
+        )
+        wandb_name += "-InferEval"
         wandb.init(
             entity="klue-level2-nlp-02",
-            project="mrc_project_model",
+            project=model_args.wandb_project,
             name=wandb_name,
-            group=model_args.model_name_or_path
+            group=model_args.model_name_or_path,
         )
         wandb.config.update(training_args)
 

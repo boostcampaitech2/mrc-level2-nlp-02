@@ -17,7 +17,7 @@ def load_pretrained_tokenizer(pretrained_model_name_or_path:str,
     if custom_flag: #custom_flag=True인 경우 Custom_tokenizer 사용
         if not os.path.isdir(tokenizer_name):
             save_customized_tokenizer(datasets['train'], pretrained_model_name_or_path, data_selected,
-                                      tokenizer_name,use_fast,add_special_tokens_flag)
+                                      use_fast,tokenizer_name,add_special_tokens_flag)
             print("make customized tokenizer!!!!!!!!!!!!")
         return AutoTokenizer.from_pretrained(tokenizer_name, use_fast=use_fast)
     else:
@@ -98,6 +98,7 @@ def save_customized_tokenizer(trainset, pretrained_model_name_or_path, data_sele
     tokenizer = AutoTokenizer.from_pretrained(pretrained_model_name_or_path, use_fast=use_fast)
     added_token_list = get_added_token(trainset, tokenizer, data_selected)
     tokenizer.add_tokens(added_token_list)
+    import pdb;pdb.set_trace()
     
     if add_special_tokens_flag==True:
         tokenizer = add_special_tokens(tokenizer)

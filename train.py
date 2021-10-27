@@ -29,6 +29,7 @@ from custom_tokenizer import load_pretrained_tokenizer
 
 from dotenv import load_dotenv
 from preprocessor import Preprocessor
+from augmentation import SpanAugmentation
 import wandb
 
 logger = logging.getLogger(__name__)
@@ -94,6 +95,17 @@ def main():
         print(" ***** rtt 데이터 병합 후 데이터 개수: ", len(datasets['train']),"******")
         print(" "+"*"*50,"\n","*"*50,"\n","*"*50)
     print(datasets)
+
+    if data_args.pretrain_span_augmentation == True :
+        print('Span Augmentation을 이용해서 데이터를 증가')
+        print('증가하기 이전에 데이터 수 : %d' %len(datasets['train']))
+        span_augmentation = SpanAugmentation()
+        train_data = datasets['train']
+        train_data = span_augmentation(train_data)
+
+        datasets['train'] = train_data
+        print('증가하고 난 이후의 데이터 수 : %d' %len(datasets['train']))
+        
 
     # AutoConfig를 이용하여 pretrained model 과 tokenizer를 불러옵니다.
     # argument로 원하는 모델 이름을 설정하면 옵션을 바꿀 수 있습니다.

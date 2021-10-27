@@ -120,6 +120,10 @@ class DataTrainingArguments:
         default=False,
         metadata={"help": "add special tokens"},
     )
+    pretrain_span_augmentation : bool = field(
+        default=False,
+        metadata={"help": "pretrain data using span augmentation"},
+    )
 
 @dataclass
 class LoggingArguments:

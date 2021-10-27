@@ -99,7 +99,7 @@ def main():
     
     #기본 전처리를 진행합니다.
     if training_args.do_eval==True:
-        datasets = Preprocessor.preprocessing(data = datasets)
+        datasets = Preprocessor.preprocessing(data = datasets, pt_num=data_args.preprocessing_pattern)
     print(datasets)
     
     # AutoConfig를 이용하여 pretrained model 과 tokenizer를 불러옵니다.

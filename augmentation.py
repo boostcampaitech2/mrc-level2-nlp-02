@@ -16,6 +16,7 @@ class SpanAugmentation :
         data_size = len(data_list)
 
         data_augmented = []
+        data_ans_text = set()
         rand_prob = np.random.rand(data_size)
         for i, data in enumerate(data_list) :
             if rand_prob[i] > self.p :
@@ -23,11 +24,16 @@ class SpanAugmentation :
             for j in range(self.n) :
                 direction = np.random.randint(3)
                 if direction == 0 : # left
-                    data_augmented.append(self.left_augmentation(data,j))
+                    data_aug = self.left_augmentation(data,j)
                 elif direction == 1 : # right
-                    data_augmented.append(self.right_augmentation(data,j))
+                    data_aug = self.right_augmentation(data,j)
                 else : # mid
-                    data_augmented.append(self.mid_augmentation(data,j))
+                    data_aug = self.mid_augmentation(data,j)
+
+                ans_text = data_aug['answers']['text'][0] 
+                if ans_text not in data_ans_text :
+                    data_augmented.append(data_aug)
+                    data_ans_text.add(ans_text)
 
         data_augmented = self.convert_to_dict(data_augmented)
         data_augmented = Dataset.from_dict(data_augmented)

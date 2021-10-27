@@ -108,8 +108,8 @@ class SparseRetrieval:
         # BM25 존재하면 가져오기
         if os.path.isfile(bm_emd_path):
             with open(bm_emd_path, "rb") as file:
-                self.BM25 = pickle.load(file)            
-            print("BM25 Embedding pickle load.")
+                self.BM25 = pickle.load(file)    
+            print("BM25 Embedding pickle %s loaded." %bm_emd_path)
         
         # https://github.com/dorianbrown/rank_bm25 -> initalizing 부분
         # BM25 존재 하지 않으면, tokenizer 한 후, BM25Plus로 passage embedding

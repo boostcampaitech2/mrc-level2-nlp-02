@@ -1,12 +1,9 @@
 import logging
 import os
 import sys
-<<<<<<< HEAD
 import pandas as pd
 
-=======
 import re
->>>>>>> origin/data_jys
 from typing import List, Callable, NoReturn, NewType, Any
 import dataclasses
 from datasets import load_metric, load_from_disk, Dataset, DatasetDict
@@ -34,15 +31,11 @@ from arguments import (
     LoggingArguments,
 )
 
-<<<<<<< HEAD
 from custom_tokenizer import load_pretrained_tokenizer
 
-import wandb
 from dotenv import load_dotenv
-=======
 from preprocessor import Preprocessor
 import wandb
->>>>>>> origin/data-shp
 
 logger = logging.getLogger(__name__)
 

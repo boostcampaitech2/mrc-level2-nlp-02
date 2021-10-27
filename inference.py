@@ -150,16 +150,6 @@ def run_sparse_retrieval(
     retriever.get_sparse_BM25()
     df = retriever.retrieve_BM25(datasets['validation'], topk=data_args.top_k_retrieval, score_ratio=data_args.score_ratio)
     
-    ## bm25 때문에 잠시 지움
-    # faiss사용하거나 안 하거나 해서, query를 받아, retrieval한 passage와 id, query 등을 받는다.
-    # if data_args.use_faiss:
-    #     retriever.build_faiss(num_clusters=data_args.num_clusters)
-    #     df = retriever.retrieve_faiss(
-    #         datasets["validation"], topk=data_args.top_k_retrieval
-    #     )
-    # else:
-    #     df = retriever.retrieve(datasets["validation"], topk=data_args.top_k_retrieval)
-
     # test data 에 대해선 정답이 없으므로 id question context 로만 데이터셋이 구성됩니다.
     if training_args.do_predict:
         f = Features( # Features로 데이터 셋 형식화?

@@ -34,10 +34,15 @@ from arguments import (
     LoggingArguments,
 )
 
+<<<<<<< HEAD
 from custom_tokenizer import load_pretrained_tokenizer
 
 import wandb
 from dotenv import load_dotenv
+=======
+from preprocessor import Preprocessor
+import wandb
+>>>>>>> origin/data-shp
 
 logger = logging.getLogger(__name__)
 
@@ -172,9 +177,20 @@ def main():
         type(model),
     )
     
+    
+    # Add Special token to tokenizer
+    special_tokens_dict = {'additional_special_tokens': ['[CHN]']}
+    num_added_toks = tokenizer.add_special_tokens(special_tokens_dict)  
+    model.resize_token_embeddings(len(tokenizer))
+    # Preprocessing
+    
+    preprocessor = Preprocessor()
+    datasets = datasets.map(preprocessor.preprocess_train)
+
     # do_train mrc model 혹은 do_eval mrc model
     if training_args.do_train or training_args.do_eval:
         run_mrc(data_args, training_args, model_args, datasets, tokenizer, model)
+
 
 def run_mrc(
     data_args: DataTrainingArguments,
@@ -408,12 +424,11 @@ def run_mrc(
         compute_metrics=compute_metrics,
     )
 
-    # Training[]
     if training_args.do_train:
         if last_checkpoint is not None:
             checkpoint = last_checkpoint
-        elif os.path.isdir(model_args.model_name_or_path):
-            checkpoint = model_args.model_name_or_path
+        #elif os.path.isdir(model_args.model_name_or_path):
+        #    checkpoint = model_args.model_name_or_path
         else:
             checkpoint = None
         train_result = trainer.train(resume_from_checkpoint=checkpoint)

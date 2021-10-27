@@ -12,9 +12,11 @@ from tqdm.auto import tqdm
 from contextlib import contextmanager
 from typing import List, Tuple, NoReturn, Any, Optional, Union
 
-
 from sklearn.feature_extraction.text import TfidfVectorizer
 import re
+
+from preprocessor import Preprocessor
+
 from datasets import (
     Dataset,
     load_from_disk,
@@ -41,7 +43,7 @@ class SparseRetrieval:
     def __init__(
         self,
         tokenize_fn,
-        data_path: Optional[str] = "../data/",
+        data_path: Optional[str] = '../data',
         context_path: Optional[str] = "wikipedia_documents.json",
     ) -> NoReturn:
 
@@ -67,7 +69,7 @@ class SparseRetrieval:
         """
 
         self.data_path = data_path
-        with open(os.path.join(data_path, context_path), "r", encoding="utf-8") as f:
+        with open(os.path.join(data_path,context_path) , "r", encoding="utf-8") as f:
             wiki = json.load(f)
 
         self.contexts = list(
@@ -109,7 +111,7 @@ class SparseRetrieval:
         # Pickle을 저장
         pickle_name = f"BM25_embedding.bin"
         bm_emd_path = os.path.join(self.data_path, pickle_name)
-        
+
         # BM25 존재하면 가져오기
         if os.path.isfile(bm_emd_path):
             with open(bm_emd_path, "rb") as file:

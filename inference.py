@@ -46,6 +46,7 @@ from dotenv import load_dotenv
 import os
 
 from preprocessing import preprocessing_data
+from preprocessor import Preprocessor
 
 logger = logging.getLogger(__name__)
 def preprocessing(datasets):
@@ -135,6 +136,16 @@ def main():
         
     datasets = datasets.map(preprocessing)
     print("------------preprocessing end--------------")
+       
+
+    # Preprocessing retrieved Data
+
+    preprocessor = Preprocessor()
+    if training_args.do_eval :
+        datasets = datasets.map(preprocessor.preprocess_train)
+    else :
+        datasets = datasets.map(preprocessor.preprocess_inf)
+
     # eval or predict mrc model
     if training_args.do_eval or training_args.do_predict:
         run_mrc(data_args, training_args, model_args, datasets, tokenizer, model)
@@ -145,7 +156,7 @@ def run_sparse_retrieval(
     datasets: DatasetDict,
     training_args: TrainingArguments,
     data_args: DataTrainingArguments,
-    data_path: str = "../data",
+    data_path: str = '../data',
     context_path: str = "wikipedia_documents.json",
 ) -> DatasetDict:
 

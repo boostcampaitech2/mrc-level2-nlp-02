@@ -4,6 +4,12 @@ from tqdm import tqdm
 import os
 import re
 
+custom_tokenizer_dict = {
+    "klue/roberta-large_cqa" : "./roberta_customized_cqa",
+    "klue/roberta-large_c" : "./roberta_customized_c",
+    "klue/roberta-large_qa" : "./roberta_customized_qa",
+}
+
 def load_pretrained_tokenizer(pretrained_model_name_or_path:str,
                               custom_flag:bool=False,
                               data_selected:str= None,
@@ -11,20 +17,15 @@ def load_pretrained_tokenizer(pretrained_model_name_or_path:str,
                               use_fast=False):
     
     if custom_flag: #custom_flag=True인 경우 Custom_tokenizer 사용
-        if not os.path.isdir(custom_tokenizer_dict[pretrained_model_name_or_path]):
+        if not os.path.isdir(custom_tokenizer_dict[pretrained_model_name_or_path+"_"+data_selected]):
             save_customized_tokenizer(datasets['train'], pretrained_model_name_or_path, data_selected,use_fast)
             print("make customized tokenizer!!!!!!!!!!!!")
-        return AutoTokenizer.from_pretrained(custom_tokenizer_dict[pretrained_model_name_or_path], use_fast=use_fast)
+        return AutoTokenizer.from_pretrained(custom_tokenizer_dict[pretrained_model_name_or_path+"_"+data_selected], use_fast=use_fast)
     else:
         return AutoTokenizer.from_pretrained(pretrained_model_name_or_path, use_fast=use_fast)
         # 'use_fast' argument를 True로 설정할 경우 rust로 구현된 tokenizer를 사용할 수 있습니다.
         # False로 설정할 경우 python으로 구현된 tokenizer를 사용할 수 있으며,
         # rust version이 비교적 속도가 빠릅니다.
-
-
-custom_tokenizer_dict = {
-    "klue/roberta-large" : "./roberta_customized"
-}
 
 
 def restore_word_by_tokens(tokenized_tokens):
@@ -95,4 +96,4 @@ def save_customized_tokenizer(trainset, pretrained_model_name_or_path, data_sele
     tokenizer.add_tokens(added_token_list)
 
     #tokenizer 저장
-    tokenizer.save_pretrained(custom_tokenizer_dict[pretrained_model_name_or_path])
+    tokenizer.save_pretrained(custom_tokenizer_dict[pretrained_model_name_or_path+"_"+data_selected])

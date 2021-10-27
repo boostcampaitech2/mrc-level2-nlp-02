@@ -43,7 +43,7 @@ def generator(df):
   raise StopIteration
 
 def select_ESconfig(filtpath :str
-    ) -> Tuple[str, str]:
+    ) -> str:
     """[summary]
     ES config file 선택하여 적용하기
     Args:
@@ -64,91 +64,103 @@ def select_ESconfig(filtpath :str
     d_idx = input("Select directory you want to load: ")
 
     config_file = os.path.abspath(os.path.join(models_dir, files[int(d_idx)]))
-    print("checkpoint_dir is: {}".format(config_file))
-    
+    print("Elastic search config file is: {}".format(config_file))
+
     with open(config_file) as f :
         lines = ''.join(f.readlines())
-    evalform = re.sub('\\|\n|  ','', lines)
-    ESconfig = evalform.split('##')
+    ESconfig = re.sub('\\|\n|  ','', lines)
     return ESconfig
 
 def prepare_config(es, docs_config, index_name, args) :
-  reconfig_flag = False
+  
   es_indices = es.indices.get_alias("*").keys()
   if index_name in es_indices :
     print(f"{index_name} already exists.")
-    reconfig_flag = input("Do you want to recreate the index? (T or F): ")
-    reconfig_flag = True if reconfig_flag == 'T' else False
-  
-  if index_name not in es_indices or reconfig_flag :
-    print(es.indices.create(index=index_name, body=docs_config, ignore=400))
+    es.indices.delete(index=index_name, ignore=[400, 404])
+
+  if args.reconfig :
+    es.indices.create(index=index_name, body=docs_config, ignore=400)
 
     df = pd.read_json('/opt/ml/data/wikipedia_documents.json').T
     df = df.drop_duplicates(subset=['text'])
     df = df.to_dict('records')
-    gen = generator(df)
-
+    
+    gen = generator(df[:100*(len(df)//100)])
+    try:
+      helpers.bulk(es, gen, chunk_size = 100)
+    except Exception as e:
+      print('Done')
+    gen = generator(df[100*(len(df)//100):])
     try:
       helpers.bulk(es, gen, chunk_size = 1)
     except Exception as e:
       print('Done')
+
   return es
 
 def run_elastic_sparse_retrieval(
-  datasets: DatasetDict,
+  datasets: DatasetDict,  
   training_args: TrainingArguments,
   data_args: DataTrainingArguments,
   ) -> DatasetDict:
 
   index_name = 'wiki_documents'
-  docs_config, query_config = select_ESconfig('./retriever/ElasticSearchConfig')
-
+  
   es = create_elastic_object()
-  print(docs_config)
-  print(query_config)
-  breakpoint()
-  
-  docs_config = eval(docs_config)
-  # es.indices.put_settings(body=docs_config['settings'], index='wiki_documents')
-  # es.indices.put_settings(body=['mappings'], index='wiki_documents')
-  
   if data_args.reconfig :
+    config = eval(select_ESconfig('./retriever/ElasticSearchConfig'))
     print("Start create index")  
-    es = prepare_config(es, docs_config, index_name, data_args)
-    
-  questions = datasets['validation']['question']
+    es = prepare_config(es, config, index_name, data_args)
+
+  print(es.indices.analyze(index=index_name, body={"analyzer" : "nori_analyzer", "text" : "동해물과 백두산이"}))
+  # print(es.search(index=index_name, body={'query':{'match':{'text':"가, 가까스로, 가령, 각, 각각"}}}, size=data_args.top_k_retrieval))
+
+  dataset = datasets['validation']
   ids = datasets['validation']['id']
-  relevent_contexts = []
+  total = []
 
-  for question in tqdm(questions):
-    query = eval(query_config)
-    relevent_context = search_with_elastic(es, query, index_name, data_args)
-    relevent_contexts.append(relevent_context)
+  exact_count = 0
+  for example in tqdm(dataset):
+    relevent_context = search_with_elastic(es, example["question"], index_name, data_args)
 
-  df = pd.DataFrame({'id':ids, 'question':questions, 'context':relevent_contexts})
+    tmp = {
+        "question": example["question"],
+        "id": example["id"],
+        "context": relevent_context,
+    }
+    if "context" in example.keys() and "answers" in example.keys():
+        # validation 데이터를 사용하면 ground_truth context와 answer도 반환합니다.
+        tmp["original_context"] = example["context"]
+        tmp["answers"] = example["answers"]
+        if example["context"] in relevent_context :
+          exact_count += 1
+    total.append(tmp)
+
+  print(f'**** Accuracy: {exact_count/len(dataset)*100:.3f}')
+  print(f'**** Correct count: {exact_count}')
+  df = pd.DataFrame(total)
   datasets = DatasetDict({"validation": Dataset.from_pandas(df)})
-
   return datasets
 
 def search_with_elastic(
   es: Elasticsearch, 
-  query: dict,
+  question: dict,
   index_name: str, 
   data_args: DataTrainingArguments,
   q_encoder: Optional[AutoModel] = None,
   tokenizer: Optional[AutoTokenizer] = None,
   )->str:
-
-  breakpoint()
+  
+  query = {'query':{'match':{'text':question}}}
   res = es.search(index=index_name, body=query, size=data_args.top_k_retrieval)
   
-
+  # breakpoint()
   relevent_contexts = ''
   max_score = res['hits']['hits'][0]['_score']
   
   for i in range(data_args.top_k_retrieval):
     score = res['hits']['hits'][i]['_score']
-    if score > max_score * 0.85:
+    if score > max_score * data_args.topR:
       relevent_contexts += res['hits']['hits'][i]['_source']['text']
       relevent_contexts += ' '
     else:

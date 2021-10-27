@@ -33,6 +33,7 @@ from transformers import (
 
 from utils_qa import postprocess_qa_predictions, check_no_error
 from trainer_qa import QuestionAnsweringTrainer
+from retriever.elastic_search import run_elastic_sparse_retrieval
 from retriever.retriever_sparse_BM25 import SparseRetrievalBM25
 from retriever.retriever_dense import DenseRetrieval
 
@@ -44,7 +45,6 @@ from arguments import (
 import utils
 import wandb
 
-import elastic_search
 from model_encoder import BertEncoder
 
 
@@ -109,7 +109,7 @@ def main():
             data_args,
         )
     elif data_args.eval_retrieval == 'elastic_sparse':
-        datasets = elastic_search.run_elastic_sparse_retrieval(
+        datasets = run_elastic_sparse_retrieval(
             datasets,
             training_args,
             data_args,
@@ -118,7 +118,6 @@ def main():
         datasets = run_dense_retrieval(
             "klue/bert-base", datasets, training_args, data_args
         )
-
 
     # eval or predict mrc model
     if training_args.do_eval or training_args.do_predict:

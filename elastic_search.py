@@ -14,6 +14,8 @@ from arguments import (
     DataTrainingArguments,
 )
 
+from model_encoder import BertEncoder
+
 
 def create_elastic_object() -> Elasticsearch:
   """Elasticsearch와 연결하는 object 생성
@@ -64,7 +66,7 @@ def run_elastic_dense_retrieval(
   questions = datasets['validation']['question']
   ids = datasets['validation']['id']
 
-  q_encoder = AutoModel.from_pretrained('encoders/q_encoder').to('cuda')
+  q_encoder = BertEncoder.from_pretrained('encoders/q_encoder').to('cuda') 
 
   tokenizer = AutoTokenizer.from_pretrained('klue/bert-base')
 

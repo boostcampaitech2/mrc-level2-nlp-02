@@ -10,3 +10,8 @@ wandb/
 robertatokenizer_customized/
 robertamodels/
 cheating_solution.ipynb
+__pycache__/
+.ipynb_checkpoints/
+models/**
+runs/**
+*.csv

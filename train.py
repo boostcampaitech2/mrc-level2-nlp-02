@@ -18,8 +18,6 @@ from transformers import (
     set_seed,
 )
 
-from tokenizers import Tokenizer
-from tokenizers.models import WordPiece
 
 from utils_qa import postprocess_qa_predictions, check_no_error
 from trainer_qa import QuestionAnsweringTrainer
@@ -117,9 +115,6 @@ def main():
             data_selected = data_args.data_selected,
             datasets=datasets,
             use_fast=True)
-    # tokenizer = AutoTokenizer.from_pretrained(
-    #     model_args.model_name_or_path,
-    #     use_fast=True)
     
     print("\n","num of added vocab in tokenizer : ", len(tokenizer.vocab) - config.vocab_size)
 
@@ -133,21 +128,6 @@ def main():
     model.resize_token_embeddings(len(tokenizer))
     assert model.vocab_size == len(tokenizer), "embedding size and vocab size is not equal"
     print("\n",f"embedding size and vocab size is equal \n [model vocab_size] {model.vocab_size} || [tokenizer vocab_size] {len(tokenizer)}" )
-
-    # # # rtt 데이터셋이 존재할 경우 기존 데이터셋과 합칩니다.
-    # if data_args.rtt_dataset_name != None:
-    #     print(" "+"*"*50,"\n","*"*50,"\n","*"*50)
-    #     print(" ***** rtt 데이터 병합 전 데이터 개수: ", len(datasets['train']),"******")
-    #     rtt_data = pd.read_csv(data_args.rtt_dataset_name)
-    #     rtt_data['answers'] = rtt_data.answers.map(eval)
-
-    #     train_data = datasets['train'].to_pandas()
-    #     new_data = pd.concat([train_data,rtt_data])
-    #     new_data = new_data.drop_duplicates(subset="question").reset_index(drop=True)
-    #     datasets['train'] = datasets['train'].from_pandas(new_data)
-    #     print(" "+"*"*50,"\n","*"*50,"\n","*"*50)
-    #     print(" ***** rtt 데이터 병합 후 데이터 개수: ", len(datasets['train']),"******")
-    #     print(" "+"*"*50,"\n","*"*50,"\n","*"*50)
 
     #cache 파일을 정리합니다.
     datasets.cleanup_cache_files()
@@ -165,45 +145,9 @@ def main():
         type(model),
     )
     
-    # datasets = run_sparse_retrieval(
-    #         tokenizer.tokenize,
-    #         datasets,
-    #         training_args,
-    #         data_args,
-    #     )
-    
-    # if data_args.train_retrieval:
-    #     # retriever = SparseRetrieval(tokenize_fn=tokenizer.tokenize,
-    #     retriever = SparseRetrieval(tokenize_fn=AutoTokenizer.from_pretrained(model_args.model_name_or_path).tokenize,
-    #                                 data_path="../data",
-    #                                 context_path="wikipedia_documents.json")
-    #     #retriever.get_sparse_embedding()
-    #     retriever.get_sparse_BM25()
-    #     #datasets = run_sparse_embedding(datasets, topk=data_args.top_k_retrieval)
-
-    
     # do_train mrc model 혹은 do_eval mrc model
     if training_args.do_train or training_args.do_eval:
         run_mrc(data_args, training_args, model_args, datasets, tokenizer, model)
-        
-# def run_sparse_embedding(datasets, topk):
-#     retriever = SparseRetrieval(tokenize_fn=tokenize,
-#                                 data_path="../data",
-#                                 context_path="wikipedia_documents.json")
-#     retriever.get_sparse_embedding()
-    
-#     train_df = retriever.retrieve(datasets["train"], topk=topk)
-#     val_df = retriever.retrieve(datasets['validation'], topk=topk)
-#     f = Features({'answers': Sequence(feature={'text': Value(dtype='string', id=None),
-#                                                 'answer_start': Value(dtype='int32', id=None)},
-#                                         length=-1, id=None),
-#                     'context': Value(dtype='string', id=None),
-#                     'id': Value(dtype='string', id=None),
-#                     'question': Value(dtype='string', id=None)})
-
-#     datasets = DatasetDict({'train': Dataset.from_pandas(train_df, features=f), 'validation': Dataset.from_pandas(val_df, features=f)})
-#     return datasets
-
 
 def run_mrc(
     data_args: DataTrainingArguments,

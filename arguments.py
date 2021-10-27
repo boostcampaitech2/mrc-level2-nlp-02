@@ -14,18 +14,18 @@ class ModelArguments:
             "help": "Path to pretrained model or model identifier from huggingface.co/models"
         },
     )
-    # config_name: Optional[str] = field(
-    #     default="klue/roberta-large",
-    #     metadata={
-    #         "help": "Pretrained config name or path if not the same as model_name"
-    #     },
-    # )
-    # tokenizer_name: Optional[str] = field(
-    #     default=None,
-    #     metadata={
-    #         "help": "customized tokenizer path if not the same as model_name"
-    #     },
-    # )
+    config_name: Optional[str] = field(
+        default="klue/roberta-large",
+        metadata={
+            "help": "Pretrained config name or path if not the same as model_name"
+        },
+    )
+    tokenizer_name: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "customized tokenizer path if not the same as model_name"
+        },
+    )
     customized_tokenizer_flag: bool = field(
         default=False,
         metadata={"help": "Load customized roberta tokenizer"},
@@ -91,6 +91,12 @@ class DataTrainingArguments:
             "help": "Define how many top-k passages to retrieve based on similarity."
         },
     )
+    score_ratio: float = field(
+        default=None,
+        metadata={
+            "help": "Define the score ratio."
+        },
+    )
     use_faiss: bool = field(
         default=False, metadata={"help": "Whether to build with faiss"}
     )
@@ -106,6 +112,10 @@ class DataTrainingArguments:
     rtt_dataset_name:str = field(
         default=None,
         metadata={"help" : "input rtt data name with path"},
+    )
+    preprocessing:bool = field(
+        default=None,
+        metabdata={"help" : "preprocessing(e.g. 1 2 3)"}
     )
 
 @dataclass

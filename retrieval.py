@@ -23,21 +23,12 @@ from datasets import (
     concatenate_datasets,
 )
 
-from preprocessing import preprocessing_data
-
 @contextmanager
 def timer(name):
     t0 = time.time()
     yield
     print(f"[{name}] done in {time.time() - t0:.3f} s")
 
-def preprocessing(context):
-    context = context.replace("\n##"," ")
-    context = context.replace("\n#"," ")
-    context = context.replace("\\n"," ")
-    context = context.replace("\n"," ")
-    context = re.sub(r"[^a-zA-Z0-9가-힣ㄱ-ㅎㅏ-ㅣぁ-ゔァ-ヴー々〆〤一-龥()?!∧≪≫『』\'<>〈〉:「」＜＞<>》《・\"-“”\s\.\‘’%,]", " ", context)
-    return context  
 
 class SparseRetrieval:
     def __init__(
@@ -45,6 +36,7 @@ class SparseRetrieval:
         tokenize_fn,
         data_path: Optional[str] = '../data',
         context_path: Optional[str] = "wikipedia_documents.json",
+        pt_num: Optional[str] = None,
     ) -> NoReturn:
 
         """
@@ -69,6 +61,7 @@ class SparseRetrieval:
         """
 
         self.data_path = data_path
+        self.pt_num = pt_num
         with open(os.path.join(data_path,context_path) , "r", encoding="utf-8") as f:
             wiki = json.load(f)
 
@@ -76,13 +69,12 @@ class SparseRetrieval:
             dict.fromkeys([v["text"] for v in wiki.values()])
         )  # set 은 매번 순서가 바뀌므로
         
-        self.contexts = list(map(preprocessing,self.contexts))
+        if self.pt_num != None:
+            self.contexts = list(map(lambda x : Preprocessor.preprocessing(data = x, pt_num=self.pt_num),self.contexts))
         
         print(f"Lengths of unique contexts : {len(self.contexts)}")
 
         #corpus wiki 데이터를 전처리 합니다.
-        # self.contexts = preprocessing_data(data = self.contexts)
-
         self.ids = list(range(len(self.contexts)))
 
         # Transform by vectorizer
@@ -108,8 +100,9 @@ class SparseRetrieval:
             만약 미리 저장된 파일이 있으면 저장된 pickle을 불러옵니다.
         """
 
-        # Pickle을 저장
-        pickle_name = f"BM25_embedding.bin"
+        # Pickle을 저장 "0123"
+        pt_num_sorted = "".join(sorted(self.pt_num))
+        pickle_name = f"BM25_embedding_{pt_num_sorted}.bin"
         bm_emd_path = os.path.join(self.data_path, pickle_name)
 
         # BM25 존재하면 가져오기
@@ -119,7 +112,7 @@ class SparseRetrieval:
             print("BM25 Embedding pickle load.")
         
         # https://github.com/dorianbrown/rank_bm25 -> initalizing 부분
-        # BM25 존재 하지 않으면, tokenizer 한 후, BM25Plus로 passage embedding?
+        # BM25 존재 하지 않으면, tokenizer 한 후, BM25Plus로 passage embedding
         else:
             print("Build passage BM25_class_instant")
             # BM25는 어떤 text 전처리 X ->  BM25 클래스의 인스턴스를 생성

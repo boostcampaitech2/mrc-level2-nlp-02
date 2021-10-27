@@ -3,14 +3,11 @@ import os
 import sys
 import pandas as pd
 
-import re
 from typing import List, Callable, NoReturn, NewType, Any
-import dataclasses
 from datasets import load_metric, load_from_disk, Dataset, DatasetDict
 #from datasets import Value, Features, Sequence
 
-from transformers import AutoConfig, AutoModelForQuestionAnswering, AutoTokenizer, BertTokenizer
-
+from transformers import AutoConfig, AutoModelForQuestionAnswering
 from transformers import (
     DataCollatorWithPadding,
     EvalPrediction,
@@ -19,11 +16,8 @@ from transformers import (
     set_seed,
 )
 
-
 from utils_qa import postprocess_qa_predictions, check_no_error
 from trainer_qa import QuestionAnsweringTrainer
-from retrieval import SparseRetrieval
-from preprocessing import preprocessing_data
 
 from arguments import (
     ModelArguments,
@@ -34,34 +28,10 @@ from arguments import (
 from custom_tokenizer import load_pretrained_tokenizer
 
 from dotenv import load_dotenv
-from preprocessor import Preprocessor
+from preprocessor import Preprocessor, preprocessing
 import wandb
 
 logger = logging.getLogger(__name__)
-
-# answers -> answer_start과 text
-def preprocessing(datasets):
-    answer_start = datasets["answers"]["answer_start"][0] 
-    
-    context_before = datasets["context"][:answer_start]
-    # n 단어때문에 개행문자부터 제거!
-    context_before = context_before.replace("\\n"," ")
-    context_before = context_before.replace("\n"," ")
-    # "-“” -> 한자, 일어, 한국어 제외하고 약간의 문자와 나머지 언어를 가져오기 편한 것!
-    context_before=re.sub(r"[^a-zA-Z0-9가-힣ㄱ-ㅎㅏ-ㅣぁ-ゔァ-ヴー々〆〤一-龥()?!∧≪≫『』\'<>〈〉:「」＜＞<>》《・\"-“”\s\.\‘’%,]", " ", context_before)
-    new_answer_start = len(context_before)
-    
-    context_after = datasets["context"][answer_start+len(datasets["answers"]['text'][0]):]
-    context_after = context_after.replace("\\n"," ")
-    context_after = context_after.replace("\n"," ")
-    context_after = re.sub(r"[^a-zA-Z0-9가-힣ㄱ-ㅎㅏ-ㅣぁ-ゔァ-ヴー々〆〤一-龥()?!∧≪≫『』\'<>〈〉:「」＜＞<>》《・\"-“”\s\.\‘’%,]", " ", context_after)
-    
-    final_context = context_before + datasets["answers"]['text'][0] + context_after
-    datasets["context"] = final_context
-    datasets["answers"]["answer_start"][0] = new_answer_start
-    
-    return datasets
-
 
 def main():
     # 가능한 arguments 들은 ./arguments.py 나 transformer package 안의 src/transformers/training_args.py 에서 확인 가능합니다.
@@ -123,12 +93,12 @@ def main():
         print(" "+"*"*50,"\n","*"*50,"\n","*"*50)
         print(" ***** rtt 데이터 병합 후 데이터 개수: ", len(datasets['train']),"******")
         print(" "+"*"*50,"\n","*"*50,"\n","*"*50)
+    print(datasets)
 
     # AutoConfig를 이용하여 pretrained model 과 tokenizer를 불러옵니다.
     # argument로 원하는 모델 이름을 설정하면 옵션을 바꿀 수 있습니다.
     config = AutoConfig.from_pretrained(
-        model_args.model_name_or_path
-    )
+        model_args.model_name_or_path)
     print(config)
     #     # 'use_fast' argument를 True로 설정할 경우 rust로 구현된 tokenizer를 사용할 수 있습니다.
     #     # False로 설정할 경우 python으로 구현된 tokenizer를 사용할 수 있으며,
@@ -136,9 +106,11 @@ def main():
     
     tokenizer = load_pretrained_tokenizer(
             pretrained_model_name_or_path = model_args.model_name_or_path,
+            tokenizer_name = model_args.tokenizer_name,
             custom_flag = model_args.customized_tokenizer_flag,
             data_selected = data_args.data_selected,
             datasets=datasets,
+            add_special_tokens_flag = data_args.add_special_tokens_flag,
             use_fast=True)
     
     print("\n","num of added vocab in tokenizer : ", len(tokenizer.vocab) - config.vocab_size)
@@ -159,7 +131,7 @@ def main():
         
     # #기본 전처리를 진행합니다.
     print("\n","전처리 전: \n",datasets['train']['context'][0])
-    datasets = preprocessing_data(data = datasets)
+    datasets = Preprocessor.preprocessing(data = datasets, pt_num = data_args.preprocessing_pattern)
     print("\n","전처리 후: \n",datasets['train']['context'][0])
 
     print(
@@ -170,15 +142,6 @@ def main():
         type(model),
     )
     
-    
-    # Add Special token to tokenizer
-    special_tokens_dict = {'additional_special_tokens': ['[CHN]']}
-    num_added_toks = tokenizer.add_special_tokens(special_tokens_dict)  
-    model.resize_token_embeddings(len(tokenizer))
-    # Preprocessing
-    
-    preprocessor = Preprocessor()
-    datasets = datasets.map(preprocessor.preprocess_train)
 
     # do_train mrc model 혹은 do_eval mrc model
     if training_args.do_train or training_args.do_eval:

@@ -4,23 +4,22 @@ from tqdm import tqdm
 import os
 import re
 
-custom_tokenizer_dict = {
-    "klue/roberta-large_cqa" : "./roberta_customized_cqa",
-    "klue/roberta-large_c" : "./roberta_customized_c",
-    "klue/roberta-large_qa" : "./roberta_customized_qa",
-}
+speical_tokens = {'additional_special_tokens': ['[CHN]']}
 
 def load_pretrained_tokenizer(pretrained_model_name_or_path:str,
+                              tokenizer_name:str,
                               custom_flag:bool=False,
                               data_selected:str= None,
                               datasets=False,
-                              use_fast=False):
+                              add_special_tokens_flag=False,
+                              use_fast=True):
     
     if custom_flag: #custom_flag=True인 경우 Custom_tokenizer 사용
-        if not os.path.isdir(custom_tokenizer_dict[pretrained_model_name_or_path+"_"+data_selected]):
-            save_customized_tokenizer(datasets['train'], pretrained_model_name_or_path, data_selected,use_fast)
+        if not os.path.isdir(tokenizer_name):
+            save_customized_tokenizer(datasets['train'], pretrained_model_name_or_path, data_selected,
+                                      tokenizer_name,use_fast,add_special_tokens_flag)
             print("make customized tokenizer!!!!!!!!!!!!")
-        return AutoTokenizer.from_pretrained(custom_tokenizer_dict[pretrained_model_name_or_path+"_"+data_selected], use_fast=use_fast)
+        return AutoTokenizer.from_pretrained(tokenizer_name, use_fast=use_fast)
     else:
         return AutoTokenizer.from_pretrained(pretrained_model_name_or_path, use_fast=use_fast)
         # 'use_fast' argument를 True로 설정할 경우 rust로 구현된 tokenizer를 사용할 수 있습니다.
@@ -90,10 +89,18 @@ def get_added_token(trainset, tokenizer, data_selected):
     return list(added_token_set)
 
 
-def save_customized_tokenizer(trainset, pretrained_model_name_or_path, data_selected,use_fast):
+def add_special_tokens(tokenizer):
+    special_tokens_dict = speical_tokens
+    return tokenizer.add_special_tokens(special_tokens_dict)  
+
+def save_customized_tokenizer(trainset, pretrained_model_name_or_path, data_selected,
+                              use_fast, tokenizer_name,add_special_tokens_flag):
     tokenizer = AutoTokenizer.from_pretrained(pretrained_model_name_or_path, use_fast=use_fast)
     added_token_list = get_added_token(trainset, tokenizer, data_selected)
     tokenizer.add_tokens(added_token_list)
+    
+    if add_special_tokens_flag==True:
+        tokenizer = add_special_tokens(tokenizer)
 
     #tokenizer 저장
-    tokenizer.save_pretrained(custom_tokenizer_dict[pretrained_model_name_or_path+"_"+data_selected])
+    tokenizer.save_pretrained(tokenizer_name)

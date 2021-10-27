@@ -45,19 +45,9 @@ import wandb
 from dotenv import load_dotenv
 import os
 
-from preprocessing import preprocessing_data
 from preprocessor import Preprocessor
 
 logger = logging.getLogger(__name__)
-def preprocessing(datasets):
-    context = datasets["context"]
-    context = context.replace("\\n"," ")
-    context = context.replace("\n"," ")
-    # 기존에 "-“” 부분을 추가하여, 일단 그리스어, 러시아어, 태국어 등을 살림
-    context = re.sub(r"[^a-zA-Z0-9가-힣ㄱ-ㅎㅏ-ㅣぁ-ゔァ-ヴー々〆〤一-龥()?!∧≪≫『』\'<>〈〉:「」＜＞<>》《・\"-“”\s\.\‘’%,]", " ", context)
-  
-    datasets["context"] = context    
-    return datasets
 
 def main():
     # 가능한 arguments 들은 ./arguments.py 나 transformer package 안의 src/transformers/training_args.py 에서 확인 가능합니다.
@@ -108,9 +98,9 @@ def main():
     datasets.cleanup_cache_files()
     
     #기본 전처리를 진행합니다.
-    # if training_args.do_eval==True:
-    #     datasets = preprocessing_data(data = datasets)
-    # print(datasets)
+    if training_args.do_eval==True:
+        datasets = Preprocessor.preprocessing(data = datasets)
+    print(datasets)
     
     # AutoConfig를 이용하여 pretrained model 과 tokenizer를 불러옵니다.
     # argument로 원하는 모델 이름을 설정하면 옵션을 바꿀 수 있습니다.
@@ -133,18 +123,6 @@ def main():
             training_args,
             data_args,
         )
-        
-    datasets = datasets.map(preprocessing)
-    print("------------preprocessing end--------------")
-       
-
-    # Preprocessing retrieved Data
-
-    preprocessor = Preprocessor()
-    if training_args.do_eval :
-        datasets = datasets.map(preprocessor.preprocess_train)
-    else :
-        datasets = datasets.map(preprocessor.preprocess_inf)
 
     # eval or predict mrc model
     if training_args.do_eval or training_args.do_predict:
@@ -163,7 +141,8 @@ def run_sparse_retrieval(
     # Query에 맞는 Passage들을 Retrieval 합니다.
     # retriever 설정
     retriever = SparseRetrieval(
-        tokenize_fn=tokenize_fn, data_path=data_path, context_path=context_path
+        tokenize_fn=tokenize_fn, data_path=data_path, context_path=context_path,
+        pt_num=data_args.preprocessing_pattern
     )
     
     # Passage Embedding 만들기

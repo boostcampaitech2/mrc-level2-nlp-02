@@ -113,9 +113,13 @@ class DataTrainingArguments:
         default=None,
         metadata={"help" : "input rtt data name with path"},
     )
-    preprocessing:bool = field(
+    preprocessing_pattern:str = field(
         default=None,
-        metabdata={"help" : "preprocessing(e.g. 1 2 3)"}
+        metabdata={"help" : "preprocessing(e.g. 123)"}
+    )
+    add_special_tokens_flag:bool = field(
+        default=False,
+        metadata={"help": "add special tokens"},
     )
 
 @dataclass

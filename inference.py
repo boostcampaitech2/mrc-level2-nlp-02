@@ -34,7 +34,7 @@ from transformers import (
 from utils_qa import postprocess_qa_predictions, check_no_error
 from trainer_qa import QuestionAnsweringTrainer
 from retrieval import SparseRetrieval
-
+import re
 from arguments import (
     ModelArguments,
     DataTrainingArguments,
@@ -48,7 +48,15 @@ import os
 from preprocessing import preprocessing_data
 
 logger = logging.getLogger(__name__)
-
+def preprocessing(datasets):
+    context = datasets["context"]
+    context = context.replace("\\n"," ")
+    context = context.replace("\n"," ")
+    # 기존에 "-“” 부분을 추가하여, 일단 그리스어, 러시아어, 태국어 등을 살림
+    context = re.sub(r"[^a-zA-Z0-9가-힣ㄱ-ㅎㅏ-ㅣぁ-ゔァ-ヴー々〆〤一-龥()?!∧≪≫『』\'<>〈〉:「」＜＞<>》《・\"-“”\s\.\‘’%,]", " ", context)
+  
+    datasets["context"] = context    
+    return datasets
 
 def main():
     # 가능한 arguments 들은 ./arguments.py 나 transformer package 안의 src/transformers/training_args.py 에서 확인 가능합니다.
@@ -124,7 +132,9 @@ def main():
             training_args,
             data_args,
         )
-
+        
+    datasets = datasets.map(preprocessing)
+    print("------------preprocessing end--------------")
     # eval or predict mrc model
     if training_args.do_eval or training_args.do_predict:
         run_mrc(data_args, training_args, model_args, datasets, tokenizer, model)

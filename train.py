@@ -1,8 +1,12 @@
 import logging
 import os
 import sys
+<<<<<<< HEAD
 import pandas as pd
 
+=======
+import re
+>>>>>>> origin/data_jys
 from typing import List, Callable, NoReturn, NewType, Any
 import dataclasses
 from datasets import load_metric, load_from_disk, Dataset, DatasetDict
@@ -36,6 +40,29 @@ import wandb
 from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
+
+# answers -> answer_start과 text
+def preprocessing(datasets):
+    answer_start = datasets["answers"]["answer_start"][0] 
+    
+    context_before = datasets["context"][:answer_start]
+    # n 단어때문에 개행문자부터 제거!
+    context_before = context_before.replace("\\n"," ")
+    context_before = context_before.replace("\n"," ")
+    # "-“” -> 한자, 일어, 한국어 제외하고 약간의 문자와 나머지 언어를 가져오기 편한 것!
+    context_before=re.sub(r"[^a-zA-Z0-9가-힣ㄱ-ㅎㅏ-ㅣぁ-ゔァ-ヴー々〆〤一-龥()?!∧≪≫『』\'<>〈〉:「」＜＞<>》《・\"-“”\s\.\‘’%,]", " ", context_before)
+    new_answer_start = len(context_before)
+    
+    context_after = datasets["context"][answer_start+len(datasets["answers"]['text'][0]):]
+    context_after = context_after.replace("\\n"," ")
+    context_after = context_after.replace("\n"," ")
+    context_after = re.sub(r"[^a-zA-Z0-9가-힣ㄱ-ㅎㅏ-ㅣぁ-ゔァ-ヴー々〆〤一-龥()?!∧≪≫『』\'<>〈〉:「」＜＞<>》《・\"-“”\s\.\‘’%,]", " ", context_after)
+    
+    final_context = context_before + datasets["answers"]['text'][0] + context_after
+    datasets["context"] = final_context
+    datasets["answers"]["answer_start"][0] = new_answer_start
+    
+    return datasets
 
 
 def main():

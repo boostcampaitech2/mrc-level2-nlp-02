@@ -14,7 +14,7 @@ from typing import List, Tuple, NoReturn, Any, Optional, Union
 
 
 from sklearn.feature_extraction.text import TfidfVectorizer
-
+import re
 from datasets import (
     Dataset,
     load_from_disk,
@@ -29,7 +29,13 @@ def timer(name):
     yield
     print(f"[{name}] done in {time.time() - t0:.3f} s")
 
-
+def preprocessing(context):
+    context = context.replace("\n##"," ")
+    context = context.replace("\n#"," ")
+    context = context.replace("\\n"," ")
+    context = context.replace("\n"," ")
+    context = re.sub(r"[^a-zA-Z0-9가-힣ㄱ-ㅎㅏ-ㅣぁ-ゔァ-ヴー々〆〤一-龥()?!∧≪≫『』\'<>〈〉:「」＜＞<>》《・\"-“”\s\.\‘’%,]", " ", context)
+    return context  
 
 class SparseRetrieval:
     def __init__(
@@ -67,6 +73,9 @@ class SparseRetrieval:
         self.contexts = list(
             dict.fromkeys([v["text"] for v in wiki.values()])
         )  # set 은 매번 순서가 바뀌므로
+        
+        self.contexts = list(map(preprocessing,self.contexts))
+        
         print(f"Lengths of unique contexts : {len(self.contexts)}")
 
         #corpus wiki 데이터를 전처리 합니다.
@@ -260,14 +269,12 @@ class SparseRetrieval:
         doc_indices = []
         for i in tqdm(tokenized_queries):
             scores = self.BM25.get_scores(i)
-            
+            boundary=[]
             sorted_score = np.sort(scores)[::-1]
             sorted_id = np.argsort(scores)[::-1]
             boundary = []  
-            # doc_scores.append(sorted_score[:k])
-            # doc_indices.append(sorted_id[:k])
             
-            ## 해당 query의 가장 높은 score(sorted_score[0])의 x0.85까지의 점수만 받는다.
+            ## 해당 query의 가장 높은 score(sorted_score[0])의 x score_ratio까지의 점수만 받는다.
             if score_ratio is not None:
                 for z in sorted_score:
                     if z>=sorted_score[0]*score_ratio:
@@ -285,7 +292,7 @@ class SparseRetrieval:
                 doc_scores.append(sorted_score[:k])
                 doc_indices.append(sorted_id[:k])
         return doc_scores, doc_indices
-
+            
     def retrieve_faiss(
         self, query_or_dataset: Union[str, Dataset], topk: Optional[int] = 1
     ) -> Union[Tuple[List, List], pd.DataFrame]:

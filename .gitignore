@@ -4,5 +4,6 @@ runs/**
 models/**
 outputs/**
 encoders/**
+retriever/__pycache__/*
 
 *.sh

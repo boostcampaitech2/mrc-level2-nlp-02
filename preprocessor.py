@@ -19,7 +19,7 @@ class Preprocessor :
         elif type(data) == list:
             for num in pt_num:
                 data = list(map(lambda x : self.pattern_dict[num].sub(" ",x),data))
-            
+        
         return data
         
     def reconstruct(self, dataset, pt_num) :

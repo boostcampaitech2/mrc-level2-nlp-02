@@ -34,7 +34,7 @@ from transformers import (
 from utils_qa import postprocess_qa_predictions, check_no_error
 from trainer_qa import QuestionAnsweringTrainer
 
-from retriever.retriever_sparse_BM25 import SparseRetrieval
+from retriever.rt_bm25 import SparseRetrieval
 from retriever.elastic_search import run_elastic_sparse_retrieval
 from retriever.retriever_dense import DenseRetrieval
 
@@ -55,20 +55,26 @@ from preprocessor import Preprocessor
 
 logger = logging.getLogger(__name__)
 
+
 def main():
     # 가능한 arguments 들은 ./arguments.py 나 transformer package 안의 src/transformers/training_args.py 에서 확인 가능합니다.
     # --help flag 를 실행시켜서 확인할 수 도 있습니다.
-    
+
     # dataclass를 통해 변수를 만들고 HfArgumentParser를 통해 합쳐서 사용
     parser = HfArgumentParser(
         (ModelArguments, DataTrainingArguments, TrainingArguments, LoggingArguments)
     )
-    model_args, data_args, training_args, log_args = parser.parse_args_into_dataclasses()
+    (
+        model_args,
+        data_args,
+        training_args,
+        log_args,
+    ) = parser.parse_args_into_dataclasses()
 
-    #trainingarguments
+    # trainingarguments
     training_args.per_device_eval_batch_size = 512
-    
-    #wandb
+
+    # wandb
     load_dotenv(dotenv_path=log_args.dotenv_path)
     WANDB_AUTH_KEY = os.getenv("WANDB_AUTH_KEY")
     wandb.login(key=WANDB_AUTH_KEY)
@@ -76,11 +82,12 @@ def main():
     wandb.init(
         entity="klue-level2-nlp-02",
         project="mrc_project_1",
-        name=log_args.wandb_name + "_eval" if training_args.do_eval==True else "_inference",
+        name=log_args.wandb_name + "_eval"
+        if training_args.do_eval == True
+        else "_inference",
         group=model_args.model_name_or_path,
     )
     wandb.config.update(training_args)
-
 
     # training_args.do_train = True
 
@@ -99,18 +106,20 @@ def main():
 
     # 모델을 초기화하기 전에 난수를 고정합니다.
     set_seed(training_args.seed)
-    
-    #데이터셋을 불러옵니다.
+
+    # 데이터셋을 불러옵니다.
     datasets = load_from_disk(data_args.dataset_name)
 
-    #cache 파일을 정리합니다.
+    # cache 파일을 정리합니다.
     datasets.cleanup_cache_files()
-    
-    #기본 전처리를 진행합니다.
-    if training_args.do_eval==True and data_args.preprocessing_pattern != None:
-        datasets = Preprocessor.preprocessing(data = datasets, pt_num=data_args.preprocessing_pattern)
+
+    # 기본 전처리를 진행합니다.
+    if training_args.do_eval == True and data_args.preprocessing_pattern != None:
+        datasets = Preprocessor.preprocessing(
+            data=datasets, pt_num=data_args.preprocessing_pattern
+        )
     print(datasets)
-    
+
     # AutoConfig를 이용하여 pretrained model 과 tokenizer를 불러옵니다.
     # argument로 원하는 모델 이름을 설정하면 옵션을 바꿀 수 있습니다.
     config = AutoConfig.from_pretrained(model_args.model_name_or_path)
@@ -118,7 +127,7 @@ def main():
         model_args.model_name_or_path,
         use_fast=True,
     )
-    
+
     model = AutoModelForQuestionAnswering.from_pretrained(
         model_args.model_name_or_path,
         from_tf=bool(".ckpt" in model_args.model_name_or_path),
@@ -213,24 +222,30 @@ def run_sparse_retrieval(
     datasets: DatasetDict,
     training_args: TrainingArguments,
     data_args: DataTrainingArguments,
-    data_path: str = '../data',
+    data_path: str = "../data",
     context_path: str = "wikipedia_documents.json",
 ) -> DatasetDict:
 
     # Query에 맞는 Passage들을 Retrieval 합니다.
     # retriever 설정
     retriever = SparseRetrieval(
-        tokenize_fn=tokenize_fn, data_path=data_path, context_path=context_path,
-        pt_num=data_args.preprocessing_pattern
+        tokenize_fn=tokenize_fn,
+        data_path=data_path,
+        context_path=context_path,
+        pt_num=data_args.preprocessing_pattern,
     )
-    
+
     # Passage Embedding 만들기
     retriever.get_sparse_BM25()
-    df = retriever.retrieve_BM25(datasets['validation'], topk=data_args.top_k_retrieval, score_ratio=data_args.score_ratio)
-    
+    df = retriever.retrieve_BM25(
+        datasets["validation"],
+        topk=data_args.top_k_retrieval,
+        score_ratio=data_args.score_ratio,
+    )
+
     # test data 에 대해선 정답이 없으므로 id question context 로만 데이터셋이 구성됩니다.
     if training_args.do_predict:
-        f = Features( # Features로 데이터 셋 형식화?
+        f = Features(  # Features로 데이터 셋 형식화?
             {
                 "context": Value(dtype="string", id=None),
                 "id": Value(dtype="string", id=None),
@@ -240,7 +255,7 @@ def run_sparse_retrieval(
 
     # train data 에 대해선 정답이 존재하므로 id question context answer 로 데이터셋이 구성됩니다.
     elif training_args.do_eval:
-        f = Features( # Features로 형식화?
+        f = Features(  # Features로 형식화?
             {
                 "answers": Sequence(
                     feature={
@@ -296,7 +311,7 @@ def run_mrc(
             stride=data_args.doc_stride,
             return_overflowing_tokens=True,
             return_offsets_mapping=True,
-            return_token_type_ids=False, # roberta모델을 사용할 경우 False, bert를 사용할 경우 True로 표기해야합니다.
+            return_token_type_ids=False,  # roberta모델을 사용할 경우 False, bert를 사용할 경우 True로 표기해야합니다.
             padding="max_length" if data_args.pad_to_max_length else False,
         )
 

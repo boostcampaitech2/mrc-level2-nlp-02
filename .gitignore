@@ -15,4 +15,5 @@ models/**
 runs/**
 encoders/**
 retriever/__pycache__/
+retriever/encoders/**
 tokenizer/**

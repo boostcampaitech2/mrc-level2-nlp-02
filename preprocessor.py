@@ -1,5 +1,6 @@
 import re
 from datasets import DatasetDict
+import pandas as pd
 
 class Preprocessor :
     pattern_dict={
@@ -17,9 +18,13 @@ class Preprocessor :
         
         # wiki corpus data
         elif type(data) == list:
-            for num in pt_num:
-                data = list(map(lambda x : self.pattern_dict[num].sub(" ",x),data))
-            
+            pd_data = pd.DataFrame({"contexts" : data})
+            for num in "1":
+                preprocessing = lambda x : self.pattern_dict[num].sub(" ", x)
+                pd_data["contexts"] = pd_data.contexts.map(preprocessing)
+            data = pd_data.drop_duplicates("contexts").contexts.to_list()
+                # new_data += [preprocessing(d) for d in data]
+                # data = list(map(lambda x : self.pattern_dict[num].sub(" ",x),data))
         return data
         
     def reconstruct(self, dataset, pt_num) :

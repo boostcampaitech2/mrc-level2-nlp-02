@@ -5,5 +5,7 @@ models/**
 outputs/**
 encoders/**
 retriever/__pycache__/*
-
+*.json
 *.sh
+*.txt
+Untitled-1.ipynb

@@ -22,7 +22,7 @@ class Preprocessor :
             for num in "1":
                 preprocessing = lambda x : self.pattern_dict[num].sub(" ", x)
                 pd_data["contexts"] = pd_data.contexts.map(preprocessing)
-            data = pd_data.drop_duplicates("contexts").contexts.to_list()
+            data = pd_data.drop_duplicates("contexts").reset_index(drop=True).contexts.to_list()
                 # new_data += [preprocessing(d) for d in data]
                 # data = list(map(lambda x : self.pattern_dict[num].sub(" ",x),data))
         return data

@@ -163,7 +163,7 @@ def search_with_elastic(
 
     for i in range(data_args.top_k_retrieval):
         score = res["hits"]["hits"][i]["_score"]
-        if score > max_score * data_args.topR:
+        if score > max_score * data_args.score_ratio:
             relevent_contexts += res["hits"]["hits"][i]["_source"]["text"]
             relevent_contexts += " "
         else:

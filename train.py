@@ -78,22 +78,6 @@ def main():
     # 데이터셋을 불러옵니다.
     datasets = load_from_disk(data_args.dataset_name)
     
-    # rtt 데이터셋이 존재할 경우 기존 데이터셋과 합칩니다.
-    if data_args.rtt_dataset_name != None:
-        print(" "+"*"*50,"\n","*"*50,"\n","*"*50)
-        print(" ***** rtt 데이터 병합 전 데이터 개수: ", len(datasets['train']),"******")
-        rtt_data = pd.read_csv(data_args.rtt_dataset_name)
-        rtt_data['answers'] = rtt_data.answers.map(eval)
-
-        train_data = datasets['train'].to_pandas()
-        new_data = pd.concat([train_data,rtt_data])
-        new_data = new_data.drop_duplicates(subset="question").reset_index(drop=True)
-        datasets['train'] = datasets['train'].from_pandas(new_data)
-        print(" "+"*"*50,"\n","*"*50,"\n","*"*50)
-        print(" ***** rtt 데이터 병합 후 데이터 개수: ", len(datasets['train']),"******")
-        print(" "+"*"*50,"\n","*"*50,"\n","*"*50)
-    print(datasets)
-
     # AutoConfig를 이용하여 pretrained model 과 tokenizer를 불러옵니다.
     # argument로 원하는 모델 이름을 설정하면 옵션을 바꿀 수 있습니다.
     config = AutoConfig.from_pretrained(
@@ -113,6 +97,22 @@ def main():
             use_fast=True)
     
     print("\n","num of added vocab in tokenizer : ", len(tokenizer.vocab) - config.vocab_size)
+
+    # rtt 데이터셋이 존재할 경우 기존 데이터셋과 합칩니다.
+    if data_args.rtt_dataset_name != None:
+        print(" "+"*"*50,"\n","*"*50,"\n","*"*50)
+        print(" ***** rtt 데이터 병합 전 데이터 개수: ", len(datasets['train']),"******")
+        rtt_data = pd.read_csv(data_args.rtt_dataset_name)
+        rtt_data['answers'] = rtt_data.answers.map(eval)
+
+        train_data = datasets['train'].to_pandas()
+        new_data = pd.concat([train_data,rtt_data])
+        new_data = new_data.drop_duplicates(subset="question").reset_index(drop=True)
+        datasets['train'] = datasets['train'].from_pandas(new_data)
+        print(" "+"*"*50,"\n","*"*50,"\n","*"*50)
+        print(" ***** rtt 데이터 병합 후 데이터 개수: ", len(datasets['train']),"******")
+        print(" "+"*"*50,"\n","*"*50,"\n","*"*50,"\n\n")
+    print(datasets)
 
     model = AutoModelForQuestionAnswering.from_pretrained(
         model_args.model_name_or_path,

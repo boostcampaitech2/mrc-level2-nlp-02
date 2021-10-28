@@ -61,7 +61,8 @@ class SparseRetrieval:
             wiki = json.load(f)
 
         if self.pt_num != None:
-            self.contexts = list(map(lambda x : Preprocessor.preprocessing(data = x, pt_num=self.pt_num),self.contexts))
+            # self.contexts = list(map(lambda x : Preprocessor.preprocessing(data = x, pt_num=self.pt_num),self.contexts)) # Preprocessor.preprocessing(data = x, pt_num=self.pt_num)
+            self.contexts = Preprocessor.preprocessing(self.contexts, pt_num=self.pt_num)
         
         self.contexts = list(
             dict.fromkeys([v["text"] for v in wiki.values()])
@@ -228,20 +229,17 @@ class SparseRetrieval:
             boundary = []  
             
             ## 해당 query의 가장 높은 score(sorted_score[0])의 x score_ratio까지의 점수만 받는다.
-            if score_ratio is not None:
-                for z in sorted_score:
-                    if z>=sorted_score[0]*score_ratio:
-                        boundary.append(True)
-                    else:
-                        boundary.append(False)        
-
-                if len(sorted_score[boundary])<=k:
-                    doc_scores.append(sorted_score[boundary])
-                    doc_indices.append(sorted_id[boundary])
+            for z in sorted_score:
+                if z>=sorted_score[0]*score_ratio:
+                    boundary.append(True)
                 else:
-                    doc_scores.append(sorted_score[:k])
-                    doc_indices.append(sorted_id[:k])
+                    boundary.append(False)        
+
+            if len(sorted_score[boundary])<=k:
+                doc_scores.append(sorted_score[boundary])
+                doc_indices.append(sorted_id[boundary])
             else:
                 doc_scores.append(sorted_score[:k])
                 doc_indices.append(sorted_id[:k])
+
         return doc_scores, doc_indices

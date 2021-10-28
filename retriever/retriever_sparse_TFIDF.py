@@ -35,7 +35,6 @@ class SparseRetrievalTFIDF:
         tokenize_fn,
         data_path: Optional[str] = "../data/",
         context_path: Optional[str] = "wikipedia_documents.json",
-        topR: float = 0.0,
     ) -> NoReturn:
 
         """
@@ -77,7 +76,6 @@ class SparseRetrievalTFIDF:
             max_features=50000,
         )
 
-        self.topR = topR
         self.p_embedding = None  # get_sparse_embedding()로 생성합니다
         self.indexer = None  # build_faiss()로 생성합니다.
 
@@ -244,7 +242,7 @@ class SparseRetrievalTFIDF:
         return doc_score, doc_indices
 
     def get_relevant_doc_bulk(
-        self, queries: List, k: Optional[int] = 1
+        self, queries: List, k: Optional[int] = 1, score_ratio: Optional[float] = None
     ) -> Tuple[List, List]:
 
         """
@@ -267,35 +265,26 @@ class SparseRetrievalTFIDF:
             result = result.toarray()
         doc_scores = []
         doc_indices = []
-        if self.topR == 0:
-            for i in range(result.shape[0]):
-                sorted_score = np.sort(result[i, :])[::-1]
-                sorted_id = np.argsort(result[i, :])[::-1]
+        for i in range(result.shape[0]):
 
-                doc_scores.append(sorted_score.tolist()[:k])
-                doc_indices.append(sorted_id.tolist()[:k])
-            return doc_scores, doc_indices
-        else:
-            for i in range(result.shape[0]):
+            sorted_score = np.sort(result[i, :])[::-1]
+            sorted_id = np.argsort(result[i, :])[::-1]
+            boundary = []
 
-                sorted_score = np.sort(result[i, :])[::-1]
-                sorted_id = np.argsort(result[i, :])[::-1]
-                boundary = []
-
-                ## 해당 query의 가장 높은 score(sorted_score[0])의 x0.85까지의 점수만 받는다.
-                for z in sorted_score:
-                    if z >= sorted_score[0] * self.topR:
-                        boundary.append(True)
-                    else:
-                        boundary.append(False)
-
-                if len(sorted_score[boundary]) <= k:
-                    doc_scores.append(sorted_score[boundary])
-                    doc_indices.append(sorted_id[boundary])
+            ## 해당 query의 가장 높은 score(sorted_score[0])의 x0.85까지의 점수만 받는다.
+            for z in sorted_score:
+                if z >= sorted_score[0] * score_ratio:
+                    boundary.append(True)
                 else:
-                    doc_scores.append(sorted_score[:k])
-                    doc_indices.append(sorted_id[:k])
-            return doc_scores, doc_indices
+                    boundary.append(False)
+
+            if len(sorted_score[boundary]) <= k:
+                doc_scores.append(sorted_score[boundary])
+                doc_indices.append(sorted_id[boundary])
+            else:
+                doc_scores.append(sorted_score[:k])
+                doc_indices.append(sorted_id[:k])
+        return doc_scores, doc_indices
 
     def retrieve_faiss(
         self, query_or_dataset: Union[str, Dataset], topk: Optional[int] = 1

@@ -94,7 +94,7 @@ class DataTrainingArguments:
         },
     )
     score_ratio: float = field(
-        default=None,
+        default=0,
         metadata={
             "help": "Define the score ratio."
         },

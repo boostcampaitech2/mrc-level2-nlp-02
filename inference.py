@@ -33,10 +33,9 @@ from transformers import (
 
 from utils_qa import postprocess_qa_predictions, check_no_error
 from trainer_qa import QuestionAnsweringTrainer
+
 from retriever.retriever_sparse_BM25 import SparseRetrieval
-import re
 from retriever.elastic_search import run_elastic_sparse_retrieval
-from retriever.retriever_sparse_BM25 import SparseRetrievalBM25
 from retriever.retriever_dense import DenseRetrieval
 
 from arguments import (

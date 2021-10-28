@@ -18,6 +18,7 @@ from transformers import (
 
 from utils_qa import postprocess_qa_predictions, check_no_error
 from trainer_qa import QuestionAnsweringTrainer
+from retriever.retriever_dense import DenseRetrieval
 
 from arguments import (
     ModelArguments,
@@ -26,7 +27,6 @@ from arguments import (
 )
 
 from custom_tokenizer import load_pretrained_tokenizer
-
 from dotenv import load_dotenv
 from preprocessor import Preprocessor
 import wandb
@@ -43,7 +43,6 @@ def main():
 
     model_args, data_args, log_args, training_args = parser.parse_args_into_dataclasses()
     
-    wandb
     load_dotenv(dotenv_path=log_args.dotenv_path)
     WANDB_AUTH_KEY = os.getenv("WANDB_AUTH_KEY")
     wandb.login(key=WANDB_AUTH_KEY)
@@ -141,7 +140,6 @@ def main():
         type(tokenizer),
         type(model),
     )
-    
 
     # do_train mrc model 혹은 do_eval mrc model
     if training_args.do_train or training_args.do_eval:

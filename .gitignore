@@ -1,6 +1,5 @@
 *.json
 *.pyc
-*.txt
 *.pt
 *.bin
 *.sh
@@ -14,4 +13,5 @@ __pycache__/
 .ipynb_checkpoints/
 models/**
 runs/**
-Untitled-1.ipynb
+encoders/**
+retriever/__pycache__/

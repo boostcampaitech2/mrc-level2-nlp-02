@@ -1,4 +1,4 @@
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 
@@ -39,7 +39,7 @@ class DataTrainingArguments:
     """
 
     dataset_name: Optional[str] = field(
-        default="../data/train_dataset",
+        default="/opt/ml/data/train_dataset",
         metadata={"help": "The name of the dataset to use."},
     )
     overwrite_cache: bool = field(
@@ -78,9 +78,11 @@ class DataTrainingArguments:
             "and end predictions are not conditioned on one another."
         },
     )
-    eval_retrieval: bool = field(
-        default=True,
-        metadata={"help": "Whether to run passage retrieval using sparse embedding."},
+    eval_retrieval: str = field(
+        default="sparse",
+        metadata={
+            "help": "Choose which passage retrieval to be used.[sparse, elastic_sparse]."
+        },
     )
     num_clusters: int = field(
         default=64, metadata={"help": "Define how many clusters to use for faiss."}
@@ -119,6 +121,13 @@ class DataTrainingArguments:
     add_special_tokens_flag:bool = field(
         default=False,
         metadata={"help": "add special tokens"},
+    )
+    num_neg: int = field(
+        default=0, metadata={"help": "Define how many negative sampling dataset"},
+    )
+    reconfig: bool = field(
+        default=False,
+        metadata={"help": "Elastic search re-config flag"},
     )
 
 @dataclass

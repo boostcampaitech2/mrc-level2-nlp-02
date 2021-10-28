@@ -98,7 +98,6 @@ def save_customized_tokenizer(trainset, pretrained_model_name_or_path, data_sele
     tokenizer = AutoTokenizer.from_pretrained(pretrained_model_name_or_path, use_fast=use_fast)
     added_token_list = get_added_token(trainset, tokenizer, data_selected)
     tokenizer.add_tokens(added_token_list)
-    import pdb;pdb.set_trace()
     
     if add_special_tokens_flag==True:
         tokenizer = add_special_tokens(tokenizer)

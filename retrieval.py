@@ -65,13 +65,13 @@ class SparseRetrieval:
         with open(os.path.join(data_path,context_path) , "r", encoding="utf-8") as f:
             wiki = json.load(f)
 
-        self.contexts = list(
-            dict.fromkeys([v["text"] for v in wiki.values()])
-        )  # set 은 매번 순서가 바뀌므로
-        
         if self.pt_num != None:
             self.contexts = list(map(lambda x : Preprocessor.preprocessing(data = x, pt_num=self.pt_num),self.contexts))
         
+        self.contexts = list(
+            dict.fromkeys([v["text"] for v in wiki.values()])
+            )  # set 은 매번 순서가 바뀌므로
+
         print(f"Lengths of unique contexts : {len(self.contexts)}")
 
         #corpus wiki 데이터를 전처리 합니다.
@@ -101,7 +101,7 @@ class SparseRetrieval:
         """
 
         # Pickle을 저장 "0123"
-        pt_num_sorted = "".join(sorted(self.pt_num))
+        pt_num_sorted = "".join(sorted(self.pt_num)) if self.pt_num else 'raw'
         pickle_name = f"BM25_embedding_{pt_num_sorted}.bin"
         bm_emd_path = os.path.join(self.data_path, pickle_name)
 

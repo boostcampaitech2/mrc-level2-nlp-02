@@ -59,6 +59,9 @@ def main():
     )
     model_args, data_args, training_args, log_args = parser.parse_args_into_dataclasses()
 
+    #trainingarguments
+    training_args.per_device_eval_batch_size = 512
+    
     #wandb
     load_dotenv(dotenv_path=log_args.dotenv_path)
     WANDB_AUTH_KEY = os.getenv("WANDB_AUTH_KEY")
@@ -98,8 +101,8 @@ def main():
     datasets.cleanup_cache_files()
     
     #기본 전처리를 진행합니다.
-    if training_args.do_eval==True:
-        datasets = Preprocessor.preprocessing(data = datasets)
+    if training_args.do_eval==True and data_args.preprocessing_pattern != None:
+        datasets = Preprocessor.preprocessing(data = datasets, pt_num=data_args.preprocessing_pattern)
     print(datasets)
     
     # AutoConfig를 이용하여 pretrained model 과 tokenizer를 불러옵니다.
@@ -146,7 +149,6 @@ def run_sparse_retrieval(
     )
     
     # Passage Embedding 만들기
-    #retriever.get_sparse_embedding()
     retriever.get_sparse_BM25()
     df = retriever.retrieve_BM25(datasets['validation'], topk=data_args.top_k_retrieval, score_ratio=data_args.score_ratio)
     

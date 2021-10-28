@@ -378,20 +378,6 @@ def run_mrc(
     def compute_metrics(p: EvalPrediction) -> Dict:
         return metric.compute(predictions=p.predictions, references=p.label_ids)
 
-    if training_args.do_eval:
-        wandb_name = model_args.model_name_or_path
-        wandb_name += (
-            "-" + model_args.wandb_tag if model_args.wandb_tag is not None else ""
-        )
-        wandb_name += "-InferEval"
-        wandb.init(
-            entity="klue-level2-nlp-02",
-            project=model_args.wandb_project,
-            name=wandb_name,
-            group=model_args.model_name_or_path,
-        )
-        wandb.config.update(training_args)
-
     print("init trainer...")
     # Trainer 초기화
     trainer = QuestionAnsweringTrainer(

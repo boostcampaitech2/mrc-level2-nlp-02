@@ -130,8 +130,9 @@ def main():
         
     # #기본 전처리를 진행합니다.
     print("\n","전처리 전: \n",datasets['train']['context'][0])
-    datasets = Preprocessor.preprocessing(data = datasets, pt_num = data_args.preprocessing_pattern)
-    print("\n","전처리 후: \n",datasets['train']['context'][0])
+    if data_args.preprocessing_pattern != None:
+        datasets = Preprocessor.preprocessing(data = datasets, pt_num = data_args.preprocessing_pattern)
+        print("\n","전처리 후: \n",datasets['train']['context'][0])
 
     print(
         type(training_args),

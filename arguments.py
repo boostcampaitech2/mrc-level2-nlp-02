@@ -145,3 +145,8 @@ class LoggingArguments:
         default='./wandb.env',
         metadata={"help":'input your dotenv path'},
     )
+
+    project_name: Optional[str] = field(
+        default="mrc_project_1",
+        metadata={"help": "The name of the dataset to use."},
+    )

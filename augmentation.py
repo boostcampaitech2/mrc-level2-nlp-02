@@ -4,7 +4,7 @@ import numpy as np
 from datasets import Dataset
 
 class SpanAugmentation :
-    def __init__(self, n=4, p=0.8, max_len=24, min_len=6) :
+    def __init__(self, n=2, p=0.7, max_len=24, min_len=12) :
         self.n = n
         self.p = p
         self.max_len = max_len

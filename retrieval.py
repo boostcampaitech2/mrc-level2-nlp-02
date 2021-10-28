@@ -37,6 +37,7 @@ class SparseRetrieval:
         data_path: Optional[str] = '../data',
         context_path: Optional[str] = "wikipedia_documents.json",
         pt_num: Optional[str] = None,
+        chn_flag : Optional[bool] = False,
     ) -> NoReturn:
 
         """
@@ -69,11 +70,12 @@ class SparseRetrieval:
             dict.fromkeys([v["text"] for v in wiki.values()])
         )  # set 은 매번 순서가 바뀌므로
         
+        self.chn_flag = chn_flag
         if self.pt_num != None:
-            self.contexts = list(map(lambda x : Preprocessor.preprocessing(data = x, pt_num=self.pt_num),self.contexts))
-        
+            print('Preprocessing Data')
+            self.contexts = Preprocessor.preprocessing(data = self.contexts, pt_num=self.pt_num, chn_flag=self.chn_flag)
         print(f"Lengths of unique contexts : {len(self.contexts)}")
-
+       
         #corpus wiki 데이터를 전처리 합니다.
         self.ids = list(range(len(self.contexts)))
 
@@ -101,8 +103,11 @@ class SparseRetrieval:
         """
 
         # Pickle을 저장 "0123"
-        pt_num_sorted = "".join(sorted(self.pt_num))
-        pickle_name = f"BM25_embedding_{pt_num_sorted}.bin"
+        pt_num_sorted = "".join(sorted(self.pt_num)) if self.pt_num != None else ""
+        if self.chn_flag == True :
+            pickle_name = f"BM25_embedding_{pt_num_sorted}_chn.bin"
+        else :
+            pickle_name = f"BM25_embedding_{pt_num_sorted}.bin"
         bm_emd_path = os.path.join(self.data_path, pickle_name)
 
         # BM25 존재하면 가져오기

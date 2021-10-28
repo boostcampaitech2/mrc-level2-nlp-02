@@ -3,11 +3,13 @@ import os
 import sys
 import pandas as pd
 
+# 4.11.3으로 변경
+
 from typing import List, Callable, NoReturn, NewType, Any
 from datasets import load_metric, load_from_disk, Dataset, DatasetDict
 #from datasets import Value, Features, Sequence
 
-from transformers import AutoConfig, AutoModelForQuestionAnswering
+from transformers import AutoConfig, AutoModelForQuestionAnswering, AutoTokenizer
 from transformers import (
     DataCollatorWithPadding,
     EvalPrediction,
@@ -94,8 +96,7 @@ def main():
         print(" "+"*"*50,"\n","*"*50,"\n","*"*50)
         print(" ***** rtt 데이터 병합 후 데이터 개수: ", len(datasets['train']),"******")
         print(" "+"*"*50,"\n","*"*50,"\n","*"*50)
-    print(datasets)
-
+    
     if data_args.pretrain_span_augmentation == True :
         print('Span Augmentation을 이용해서 데이터를 증가')
         print('증가하기 이전에 데이터 수 : %d' %len(datasets['train']))
@@ -105,7 +106,8 @@ def main():
 
         datasets['train'] = train_data
         print('증가하고 난 이후의 데이터 수 : %d' %len(datasets['train']))
-        
+    
+    print(datasets)
 
     # AutoConfig를 이용하여 pretrained model 과 tokenizer를 불러옵니다.
     # argument로 원하는 모델 이름을 설정하면 옵션을 바꿀 수 있습니다.
@@ -124,7 +126,6 @@ def main():
             datasets=datasets,
             add_special_tokens_flag = data_args.add_special_tokens_flag,
             use_fast=True)
-    
     print("\n","num of added vocab in tokenizer : ", len(tokenizer.vocab) - config.vocab_size)
 
     model = AutoModelForQuestionAnswering.from_pretrained(
@@ -136,6 +137,7 @@ def main():
     # model resize
     model.resize_token_embeddings(len(tokenizer))
     assert model.vocab_size == len(tokenizer), "embedding size and vocab size is not equal"
+    print('Size of Tokenizer : %d' %len(tokenizer))
     print("\n",f"embedding size and vocab size is equal \n [model vocab_size] {model.vocab_size} || [tokenizer vocab_size] {len(tokenizer)}" )
 
     #cache 파일을 정리합니다.
@@ -143,7 +145,9 @@ def main():
         
     # #기본 전처리를 진행합니다.
     print("\n","전처리 전: \n",datasets['train']['context'][0])
-    datasets = Preprocessor.preprocessing(data = datasets, pt_num = data_args.preprocessing_pattern)
+    datasets = Preprocessor.preprocessing(data = datasets, 
+                                          pt_num = data_args.preprocessing_pattern, 
+                                          chn_flag=data_args.add_special_tokens_flag)
     print("\n","전처리 후: \n",datasets['train']['context'][0])
 
     print(

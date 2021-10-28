@@ -30,6 +30,7 @@ from transformers import (
     TrainingArguments,
     set_seed,
 )
+from custom_tokenizer import add_special_tokens
 
 from utils_qa import postprocess_qa_predictions, check_no_error
 from trainer_qa import QuestionAnsweringTrainer
@@ -69,6 +70,7 @@ def main():
         project="mrc_project_1",
         name=log_args.wandb_name + "_eval" if training_args.do_eval==True else "_inference",
         group=model_args.model_name_or_path,
+        
     )
     wandb.config.update(training_args)
 
@@ -99,7 +101,10 @@ def main():
     
     #기본 전처리를 진행합니다.
     if training_args.do_eval==True:
-        datasets = Preprocessor.preprocessing(data = datasets, pt_num=data_args.preprocessing_pattern)
+        if data_args.preprocessing_pattern != None :
+            datasets = Preprocessor.preprocessing(data = datasets, 
+                                                  pt_num=data_args.preprocessing_pattern, 
+                                                  chn_flag=data_args.add_special_tokens_flag)
     print(datasets)
     
     # AutoConfig를 이용하여 pretrained model 과 tokenizer를 불러옵니다.
@@ -142,7 +147,8 @@ def run_sparse_retrieval(
     # retriever 설정
     retriever = SparseRetrieval(
         tokenize_fn=tokenize_fn, data_path=data_path, context_path=context_path,
-        pt_num=data_args.preprocessing_pattern
+        pt_num=data_args.preprocessing_pattern,
+        chn_flag=data_args.add_special_tokens_flag
     )
     
     # Passage Embedding 만들기

@@ -21,7 +21,11 @@ def load_pretrained_tokenizer(pretrained_model_name_or_path:str,
             print("make customized tokenizer!!!!!!!!!!!!")
         return AutoTokenizer.from_pretrained(tokenizer_name, use_fast=use_fast)
     else:
-        return AutoTokenizer.from_pretrained(pretrained_model_name_or_path, use_fast=use_fast)
+        tokenizer = AutoTokenizer.from_pretrained(pretrained_model_name_or_path, use_fast=use_fast)
+        # 질문하기
+        if add_special_tokens_flag == True :
+            add_special_tokens(tokenizer)
+        return tokenizer
         # 'use_fast' argument를 True로 설정할 경우 rust로 구현된 tokenizer를 사용할 수 있습니다.
         # False로 설정할 경우 python으로 구현된 tokenizer를 사용할 수 있으며,
         # rust version이 비교적 속도가 빠릅니다.

@@ -173,6 +173,7 @@ def run_sparse_retrieval(
                 "question": Value(dtype="string", id=None),
             }
         )
+    breakpoint()
     datasets = DatasetDict({"validation": Dataset.from_pandas(df, features=f)})
     return datasets
 

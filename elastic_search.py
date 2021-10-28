@@ -14,7 +14,7 @@ from arguments import (
     DataTrainingArguments,
 )
 
-from model_encoder import BertEncoder
+from model_encoder import BertEncoder, RobertaEncoder
 
 
 def create_elastic_object() -> Elasticsearch:
@@ -41,7 +41,8 @@ def run_elastic_sparse_retrieval(
 
   questions = datasets['validation']['question']
   ids = datasets['validation']['id']
-
+  answers = datasets['validation']['answers']
+  # breakpoint()
   relevent_contexts = []
   if data_args.use_entity_enrichment:
     print('Use entitiy enrichment.')
@@ -50,7 +51,7 @@ def run_elastic_sparse_retrieval(
     relevent_context = search_with_elastic(es, question, data_args)
     relevent_contexts.append(relevent_context)
 
-  df = pd.DataFrame({'id':ids, 'question':questions, 'context':relevent_contexts})
+  df = pd.DataFrame({'id':ids, 'question':questions, 'context':relevent_contexts, 'answers':answers})
   datasets = DatasetDict({"validation": Dataset.from_pandas(df)})
 
   return datasets
@@ -65,18 +66,21 @@ def run_elastic_dense_retrieval(
 
   questions = datasets['validation']['question']
   ids = datasets['validation']['id']
+  answers = datasets['validation']['answers']
+  # breakpoint()
+  # q_encoder = BertEncoder.from_pretrained('encoders/q_encoder_neg').to('cuda') ########################
+  q_encoder = RobertaEncoder.from_pretrained('encoders/q_encoder_neg_sen1').to('cuda') 
 
-  q_encoder = BertEncoder.from_pretrained('encoders/q_encoder').to('cuda') 
-
+  # tokenizer = AutoTokenizer.from_pretrained('klue/bert-base')
   tokenizer = AutoTokenizer.from_pretrained('klue/bert-base')
 
   relevent_contexts = []
 
-  for question in questions:
+  for question in tqdm(questions):
     relevent_context = search_with_elastic(es, question, data_args, q_encoder, tokenizer)
     relevent_contexts.append(relevent_context)
 
-  df = pd.DataFrame({'id':ids, 'question':questions, 'context':relevent_contexts})
+  df = pd.DataFrame({'id':ids, 'question':questions, 'context':relevent_contexts, 'answers':answers})
   datasets = DatasetDict({"validation": Dataset.from_pandas(df)})
 
   return datasets
@@ -109,18 +113,51 @@ def search_with_elastic(
   elif data_args.eval_retrieval == 'elastic_dense':
     with torch.no_grad():
       q_encoder.eval()
-      q_tokenized = tokenizer([question], padding="max_length", truncation=True, return_tensors='pt', max_length=510).to('cuda')
+      q_tokenized = tokenizer([question], padding="max_length", truncation=True, return_tensors='pt', max_length=510, return_token_type_ids=False).to('cuda')
       q_emb = q_encoder(**q_tokenized)
-      q_output = q_emb[1].cpu().detach().numpy().tolist()[0]
+      q_output = q_emb[0].cpu().detach().numpy().tolist()
+    
+    # ###ENITIY ENRICHMENT###
+    # match_phrases = create_match_phrases(question)
+    # ######
+    # query = {
+    #   'query':{
+    #     "script_score": {
+    #       "query" : {
+    #         'bool' : {
+    #           'should' : [
+    #             {
+    #               "match" : {
+    #                 "text": question
+    #               },
+    #             },
+    #             *match_phrases
+    #           ]
+    #         } 
+    #       },
+    #       "script": {
+    #         # "source": "cosineSimilarity(params.queryVector, doc['vector'])",
+    #         "source": "_score * cosineSimilarity(params.queryVector, doc['vector']) / (_score + cosineSimilarity(params.queryVector, doc['vector'])) + cosineSimilarity(params.queryVector, doc['vector']) * _score / (_score + cosineSimilarity(params.queryVector, doc['vector']))",
+    #         "params": {
+    #           "queryVector": q_output
+    #         }
+    #       }
+    #     }
+    #   }
+    # }
+    
     query = {
       'query':{
         "script_score": {
           "query" : {
-            "match_all" : {}
+            "match" : {
+              "text": question
+            },
           },
           "script": {
-            # "source": "1 / (1 + l2norm(params.queryVector, doc['vector']))",
-            "source": "cosineSimilarity(params.queryVector, doc['vector']) + 1.0",
+            # "source": "cosineSimilarity(params.queryVector, doc['vector'])",
+            # "source": "_score * cosineSimilarity(params.queryVector, doc['vector']) / (_score + cosineSimilarity(params.queryVector, doc['vector'])) + cosineSimilarity(params.queryVector, doc['vector']) * _score / (_score + cosineSimilarity(params.queryVector, doc['vector']))",
+            "source": "_score * cosineSimilarity(params.queryVector, doc['vector'])",
             "params": {
               "queryVector": q_output
             }
@@ -138,7 +175,7 @@ def search_with_elastic(
     }
 
   if data_args.eval_retrieval == 'elastic_dense':
-    res = es.search(index='wiki_documents_splited_dense', body=query, size=data_args.top_k_retrieval)
+    res = es.search(index='wiki_documents_dense_sen', body=query, size=data_args.top_k_retrieval)
   else:
     res = es.search(index='wiki_documents', body=query, size=data_args.top_k_retrieval)
   
@@ -147,7 +184,7 @@ def search_with_elastic(
   
   for i in range(data_args.top_k_retrieval):
     score = res['hits']['hits'][i]['_score']
-    if score > max_score * 0.85:
+    if score > max_score * 0.85:#######################################
       relevent_contexts += res['hits']['hits'][i]['_source']['text']
       relevent_contexts += ' '
     else:

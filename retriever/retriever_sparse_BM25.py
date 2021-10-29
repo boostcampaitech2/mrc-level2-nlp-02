@@ -59,15 +59,14 @@ class SparseRetrieval:
         self.pt_num = pt_num
         with open(os.path.join(data_path,context_path) , "r", encoding="utf-8") as f:
             wiki = json.load(f)
-
-        if self.pt_num != None:
-            # self.contexts = list(map(lambda x : Preprocessor.preprocessing(data = x, pt_num=self.pt_num),self.contexts)) # Preprocessor.preprocessing(data = x, pt_num=self.pt_num)
-            self.contexts = Preprocessor.preprocessing(self.contexts, pt_num=self.pt_num)
         
         self.contexts = list(
             dict.fromkeys([v["text"] for v in wiki.values()])
             )  # set 은 매번 순서가 바뀌므로
-
+        
+        if self.pt_num != None:
+            self.contexts = Preprocessor.preprocessing(self.contexts, pt_num=self.pt_num)
+        
         print(f"Lengths of unique contexts : {len(self.contexts)}")
 
         #corpus wiki 데이터를 전처리 합니다.

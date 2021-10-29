@@ -102,7 +102,7 @@ def main():
     if data_args.rtt_dataset_name != None:
         print(" "+"*"*50,"\n","*"*50,"\n","*"*50)
         print(" ***** rtt 데이터 병합 전 데이터 개수: ", len(datasets['train']),"******")
-        rtt_data = pd.read_csv(data_args.rtt_dataset_name)
+        rtt_data = pd.read_csv(data_args.rtt_dataset_name,  index_col=0)
         rtt_data['answers'] = rtt_data.answers.map(eval)
 
         train_data = datasets['train'].to_pandas()

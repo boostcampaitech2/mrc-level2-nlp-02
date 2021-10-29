@@ -64,10 +64,7 @@ def main():
         (ModelArguments, DataTrainingArguments, TrainingArguments, LoggingArguments)
     )
     model_args, data_args, training_args, log_args = parser.parse_args_into_dataclasses()
-    
-    #trainingarguments
-    training_args.per_device_eval_batch_size = 512
-    
+       
     #wandb
     load_dotenv(dotenv_path=log_args.dotenv_path)
     WANDB_AUTH_KEY = os.getenv("WANDB_AUTH_KEY")

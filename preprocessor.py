@@ -10,18 +10,26 @@ class Preprocessor :
     
 
     @classmethod
-    def preprocessing(self, data, pt_num):
+    def preprocessing(self, data, pt_num): #pt_num 123_0 or 123_1
         # dataset
         if type(data) == DatasetDict:
             # data = data.map(self.reconstruct(pt_num=pt_num))        
             data = data.map(lambda x : self.reconstruct(self, dataset = x, pt_num=pt_num))
         
         # wiki corpus data
-        elif type(data) == list:
-            for num in pt_num:
-                data = list(map(lambda x : self.pattern_dict[num].sub(" ",x),data))
-        return data
+        # elif type(data) == list:
+            # for num in pt_num:
+                # data = list(map(lambda x : self.pattern_dict[num].sub(" ",x),data))
         
+        elif type(data) == list:
+            pd_data = pd.DataFrame({"contexts" : data})
+            for num in pt_num:
+                preprocessing = lambda x : self.pattern_dict[num].sub(" ", x)
+                pd_data["contexts"] = pd_data.contexts.map(preprocessing)
+            data = pd_data.drop_duplicates("contexts").contexts.to_list()
+        return data
+
+
     def reconstruct(self, dataset, pt_num) :
         assert isinstance(dataset, dict)
         context = dataset['context']

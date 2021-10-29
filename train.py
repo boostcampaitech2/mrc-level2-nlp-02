@@ -1,6 +1,7 @@
 import logging
 import os
 import sys
+from nltk import data
 import pandas as pd
 
 # 4.11.3으로 변경
@@ -30,7 +31,7 @@ from arguments import (
 from custom_tokenizer import load_pretrained_tokenizer
 
 from dotenv import load_dotenv
-from preprocessor import Preprocessor
+from preprocessor import Preprocessor, PreprocessorTokenizer
 from augmentation import SpanAugmentation
 import wandb
 
@@ -142,13 +143,20 @@ def main():
 
     #cache 파일을 정리합니다.
     datasets.cleanup_cache_files()
-        
+    
+    # Preprocessing using tokenizer data
+    print('Preprocessing Dataset')
+    preprocessor = PreprocessorTokenizer(tokenizer)
+    datasets = preprocessor.preprocessing(data=datasets)
+    
+    """ Team Code
     # #기본 전처리를 진행합니다.
     print("\n","전처리 전: \n",datasets['train']['context'][0])
     datasets = Preprocessor.preprocessing(data = datasets, 
                                           pt_num = data_args.preprocessing_pattern, 
                                           chn_flag=data_args.add_special_tokens_flag)
     print("\n","전처리 후: \n",datasets['train']['context'][0])
+    """
 
     print(
         type(training_args),

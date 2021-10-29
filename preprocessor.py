@@ -1,5 +1,6 @@
 import re
 from datasets import DatasetDict
+from transformers import BertTokenizerFast
 
 class Preprocessor :
     pattern_dict={
@@ -77,3 +78,55 @@ class Preprocessor :
         for i in range(bracket_size) :
             context = context.replace(prev_words[i], cur_words[i])
         return context
+
+
+class PreprocessorTokenizer :
+    def __init__(self, tokenizer) :
+        assert isinstance(tokenizer, BertTokenizerFast)
+        self.tokenizer = tokenizer
+        self.unk_id = tokenizer.convert_tokens_to_ids('[UNK]')
+        unk_chars = []
+        for i in range(10000) :
+            if tokenizer.convert_tokens_to_ids(chr(i)) == self.unk_id :
+                unk_chars.append(chr(i))
+        self.unk_chars = re.compile('['+''.join(unk_chars) + ']')
+
+    def preprocessing(self, data) :
+        if isinstance(data , DatasetDict) :
+            data = data.map(lambda x : self.reconstruct(dataset = x)) 
+        elif isinstance(data, list) :
+            data = list(map(lambda x : self.sen_preprocess(x), data))
+        else :
+            assert TypeError, "Wrong Data Type for Preprocessing"
+        return data
+   
+    def reconstruct(self, dataset) :
+        assert isinstance(dataset, dict)
+        context = dataset['context']
+        question = dataset['question']
+        answer = dataset['answers'] 
+        answer_start, answer_text = answer['answer_start'][0], answer['text'][0]
+        context_prev = context[:answer_start]
+        context_next = context[answer_start + len(answer_text):]
+
+        context_prev = self.sen_preprocess(context_prev)
+        context_next = self.sen_preprocess(context_next)
+
+        question = self.sen_preprocess(question)
+        answer_text = self.sen_preprocess(answer_text)
+
+        answer_pos = len(context_prev)
+        context = context_prev + answer_text + context_next
+        answer = {'answer_start' : [answer_pos], 'text' : [answer_text]}
+
+        dataset['context'] = context
+        dataset['answers'] = answer
+        return dataset
+
+    def sen_preprocess(self, sen) :
+        assert isinstance(sen, str)
+        sen = re.sub(r'\n|\\n', '' , sen)
+        sen = re.sub(r'[\U000186a0-\U00030d40]', '', sen)
+        sen = self.unk_chars.sub(' ', sen)
+        sen = re.sub('\s+', ' ', sen)
+        return sen 

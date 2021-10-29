@@ -137,7 +137,6 @@ def main():
 
 
 def run_sparse_retrieval(
-    tokenizer : BertTokenizerFast, # test code
     tokenize_fn: Callable[[str], List[str]],
     datasets: DatasetDict,
     training_args: TrainingArguments,
@@ -149,8 +148,7 @@ def run_sparse_retrieval(
     # Query에 맞는 Passage들을 Retrieval 합니다.
     # retriever 설정
     retriever = SparseRetrieval( 
-        tokenize_fn=tokenizer, # test code
-        # tokenize_fn = tokenize_fn
+        tokenize_fn = tokenize_fn,
         data_path=data_path, 
         context_path=context_path,
         pt_num=data_args.preprocessing_pattern,

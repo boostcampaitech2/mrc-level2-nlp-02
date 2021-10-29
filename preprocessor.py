@@ -6,7 +6,8 @@ class Preprocessor :
     pattern_dict={
                 "1" : re.compile("(\\n)+|(\\\\n)+|(\\xa0)|(\\u3000)"),
                 "2" : re.compile("[^a-zA-Z0-9가-힣ㄱ-ㅎㅏ-ㅣぁ-ゔァ-ヴー々〆〤一-龥()?!∧≪≫『』\'<>〈〉:「」＜＞<>》《・\"-“”\s\.\‘’%,]"),
-                "3" : re.compile('['+chr(0)+'-'+chr(31)+chr(8191)+'-'+chr(12288)+chr(55204)+'-'+chr(63743)+']')}
+                "3" : re.compile(r'[\u0000-\u001f\u1fff-\u3000\ud7a4-\uf8ff\U000186a0-\U00030d40]'),
+            }
     
     chn_compiler = re.compile('[ぁ-ゔァ-ヴー々〆〤一-龥]+')
     bracket_compiler = re.compile(r'\(([^)]*)') 

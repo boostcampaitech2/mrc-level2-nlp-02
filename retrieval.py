@@ -34,8 +34,7 @@ def timer(name):
 class SparseRetrieval:
     def __init__(
         self,
-        tokenizer : BertTokenizerFast,
-        #tokenize_fn,
+        tokenize_fn,
         data_path: Optional[str] = '../data',
         context_path: Optional[str] = "wikipedia_documents.json",
         pt_num: Optional[str] = None,
@@ -72,25 +71,18 @@ class SparseRetrieval:
             dict.fromkeys([v["text"] for v in wiki.values()])
         )  # set 은 매번 순서가 바뀌므로
 
-        # test code
-        preprocessor = PreprocessorTokenizer(tokenizer) 
-        self.contexts = preprocessor.preprocessing(self.contexts)
-
-        """ Team Code
         self.chn_flag = chn_flag
         if self.pt_num != None:
             print('Preprocessing Data')
             self.contexts = Preprocessor.preprocessing(data = self.contexts, pt_num=self.pt_num, chn_flag=self.chn_flag)
         print(f"Lengths of unique contexts : {len(self.contexts)}")
-        """
 
         #corpus wiki 데이터를 전처리 합니다.
         self.ids = list(range(len(self.contexts)))
 
         # Transform by vectorizer
         self.tfidfv = TfidfVectorizer(
-            #tokenizer=tokenize_fn,
-            tokenizer=tokenizer.tokenize_fn,
+            tokenizer=tokenize_fn,
             ngram_range=(1, 2),
             max_features=50000,
         )
@@ -101,7 +93,7 @@ class SparseRetrieval:
         ## BM25 추가용 ##
         self.BM25 = None
         #self.tokenizer = tokenize_fn
-        self.tokenizer = tokenizer.tokenize_fn
+        self.tokenizer = tokenize_fn
         
     def get_sparse_BM25(self) -> NoReturn:
 
@@ -113,14 +105,11 @@ class SparseRetrieval:
         """
 
         # Pickle을 저장 "0123"
-        """
         pt_num_sorted = "".join(sorted(self.pt_num)) if self.pt_num != None else ""
         if self.chn_flag == True :
             pickle_name = f"BM25_embedding_{pt_num_sorted}_chn.bin"
         else :
             pickle_name = f"BM25_embedding_{pt_num_sorted}.bin"
-        """
-        pickle_name = f"BM25_embedding_tokenizer.bin" # test code
         bm_emd_path = os.path.join(self.data_path, pickle_name)
 
         # BM25 존재하면 가져오기

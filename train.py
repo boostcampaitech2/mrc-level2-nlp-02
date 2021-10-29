@@ -144,20 +144,13 @@ def main():
     #cache 파일을 정리합니다.
     datasets.cleanup_cache_files()
     
-    # Preprocessing using tokenizer data
-    print('Preprocessing Dataset')
-    preprocessor = PreprocessorTokenizer(tokenizer)
-    datasets = preprocessor.preprocessing(data=datasets)
-    
-    """ Team Code
     # #기본 전처리를 진행합니다.
     print("\n","전처리 전: \n",datasets['train']['context'][0])
     datasets = Preprocessor.preprocessing(data = datasets, 
                                           pt_num = data_args.preprocessing_pattern, 
                                           chn_flag=data_args.add_special_tokens_flag)
     print("\n","전처리 후: \n",datasets['train']['context'][0])
-    """
-
+    
     print(
         type(training_args),
         type(model_args),
@@ -166,7 +159,6 @@ def main():
         type(model),
     )
     
-
     # do_train mrc model 혹은 do_eval mrc model
     if training_args.do_train or training_args.do_eval:
         run_mrc(data_args, training_args, model_args, datasets, tokenizer, model)

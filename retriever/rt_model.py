@@ -21,8 +21,8 @@ class klueRobertaEncoder(nn.Module):
         self.dropout = nn.Dropout(0.2)
         self.activation = nn.Tanh()
 
-    def forward(self, input_ids, attention_mask=None):
-        outputs = self.backbone(input_ids, attention_mask=attention_mask)
+    def forward(self, input_ids, attention_mask=None, token_type_ids=None):
+        outputs = self.backbone(input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids)
 
         last_hidden_state = outputs[0]
 

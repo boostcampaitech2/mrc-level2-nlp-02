@@ -42,7 +42,7 @@ def make_custom_dataset_with_bm25(
     custom_dataset["top_k_passage"] = top_k_passage
     custom_dataset["target"] = target
 
-    file_name = os.path.join(save_path, f"bm25_{top_k}_{pt_num}.pickle")
+    file_name = os.path.join(save_path, f"bm25_top{top_k}_pp{pt_num}.pickle")
 
     with open(file_name, "wb") as f:
         pickle.dump(custom_dataset, f)
@@ -64,13 +64,11 @@ def main(model_args, data_args):
     )
 
     if data_args.preprocessing_pattern == None:
-        pt_num = 0
-    else:
-        pt_num = data_args.preprocessing_pattern
+        data_args.preprocessing_pattern = 0
 
     bm25_path = os.path.join(
         data_args.save_dir,
-        f"bm25_top_{data_args.top_k_retrieval}_{pt_num}.csv",
+        f"bm25_top{data_args.top_k_retrieval}_pp{data_args.preprocessing_pattern}.csv",
     )
 
     retriever.get_sparse_BM25()
@@ -86,7 +84,7 @@ def main(model_args, data_args):
         df.to_csv(bm25_path, index=False)
 
     make_custom_dataset_with_bm25(
-        df, data_args.pickle_save_dir, top_k=data_args.top_k_retrieval, pt_num=pt_num
+        df, data_args.pickle_save_dir, top_k=data_args.top_k_retrieval, pt_num=data_args.preprocessing_pattern
     )
 
 

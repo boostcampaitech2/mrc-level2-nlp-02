@@ -23,10 +23,10 @@ from rt_arguments import (
 from rt_model import klueRobertaEncoder
 from rt_dataset import RtTrainDataset
 
-def save_encoder(p_encoder, q_encoder, training_args, data_args):
-    # 폴더 이름 bs{}_topk{}_acs{}
-    folder_name = f"ep{training_args.num_train_epochs}_bs{training_args.per_device_train_batch_size}_topk{data_args.top_k_retrieval}_acs{training_args.gradient_accumulation_steps}"
-    full_path = os.path.join(training_args.output_dir, folder_name)
+def save_encoder(model_name, p_encoder, q_encoder, training_args, data_args):
+    # 파일 이름 model_epoch_batch_topk_acs_pp(preprocessing pattern)
+    file_name = f"{model_name.split('/')[-1]}_ep{int(training_args.num_train_epochs)}_bs{training_args.per_device_train_batch_size}_topk{data_args.top_k_retrieval}_acs{training_args.gradient_accumulation_steps}_pp{data_args.preprocessing_pattern}"
+    full_path = os.path.join(training_args.output_dir, file_name)
 
     os.makedirs(full_path, exist_ok=True)
 
@@ -34,7 +34,8 @@ def save_encoder(p_encoder, q_encoder, training_args, data_args):
     q_encoder_path = os.path.join(full_path, "query.pt")
 
     torch.save(p_encoder.state_dict(), p_encoder_path)
-    torch.save(q_encoder.state_dict(), q_encoder_path)    
+    torch.save(q_encoder.state_dict(), q_encoder_path)
+        
 
 def train(args, p_encoder, q_encoder, dataloader, top_k):
     print("training by bm25 negative sampling data !!!")
@@ -75,36 +76,29 @@ def train(args, p_encoder, q_encoder, dataloader, top_k):
 
                 if len(batch) == 5:
                     p_inputs = {
-                        "input_ids": batch[0]
-                        .view(batch_size * top_k, -1)
-                        .to(args.device),  # (batch_size * tok_k, emb_dim)
-                        "attention_mask": batch[1]
-                        .view(batch_size * top_k, -1)
-                        .to(args.device),  # (batch_size, tok_k, emb_dim)
+                        "input_ids": batch[0].view(batch_size * top_k, -1).to(args.device),  # (batch_size * tok_k, emb_dim)
+                        "attention_mask": batch[1].view(batch_size * top_k, -1).to(args.device),  # (batch_size, tok_k, emb_dim)
                     }
                     q_inputs = {
-                        "input_ids": batch[2]
-                        .view(batch_size, -1)
-                        .to(args.device),  # (batch_size, emb_dim)
-                        "attention_mask": batch[3]
-                        .view(batch_size, -1)
-                        .to(args.device),  # (batch_size, emb_dim)
+                        "input_ids": batch[2].view(batch_size, -1).to(args.device),  # (batch_size, emb_dim)
+                        "attention_mask": batch[3].view(batch_size, -1).to(args.device),  # (batch_size, emb_dim)
                     }
                     targets = batch[4].long().to(args.device)
                 else:
                     p_inputs = {
-                        "input_ids": batch[0].to(args.device),
-                        "attention_mask": batch[1].to(args.device),
-                        "token_type_ids": batch[2].to(args.device),
+                        "input_ids": batch[0].view(batch_size * top_k, -1).to(args.device),
+                        "attention_mask": batch[1].view(batch_size * top_k, -1).to(args.device),
+                        "token_type_ids": batch[2].view(batch_size * top_k, -1).to(args.device),
                     }
                     q_inputs = {
-                        "input_ids": batch[3].to(args.device),
-                        "attention_mask": batch[4].to(args.device),
-                        "token_type_ids": batch[5].to(args.device),
+                        "input_ids": batch[3].view(batch_size, -1).to(args.device),
+                        "attention_mask": batch[4].view(batch_size, -1).to(args.device),
+                        "token_type_ids": batch[5].view(batch_size, -1).to(args.device),
                     }
                     targets = batch[6].long().to(args.device)
 
                 with autocast():
+                    
                     p_outputs = p_encoder(**p_inputs)
                     q_outputs = q_encoder(**q_inputs)
 
@@ -131,7 +125,6 @@ def train(args, p_encoder, q_encoder, dataloader, top_k):
 
     return p_encoder, q_encoder
 
-
 def main(model_args, data_args, training_args):
 
     print(f"model is from {encoder_args.model_name_or_path}")
@@ -140,12 +133,10 @@ def main(model_args, data_args, training_args):
     set_seed(training_args.seed)
 
     if data_args.preprocessing_pattern == None:
-        pt_num = 0
-    else:
-        pt_num = data_args.preprocessing_pattern
+        data_args.preprocessing_pattern = 0
 
     custom_pickle = os.path.join(
-        data_args.pickle_save_dir, f"bm25_{data_args.top_k_retrieval}_{pt_num}.pickle"
+        data_args.pickle_save_dir, f"bm25_top{data_args.top_k_retrieval}_pp{data_args.preprocessing_pattern}.pickle"
     )
 
     print(f"custom data is from {custom_pickle}")
@@ -153,14 +144,14 @@ def main(model_args, data_args, training_args):
     with open(custom_pickle, "rb") as f:
         train_dataset = pickle.load(f)
 
-    tokinzer = AutoTokenizer.from_pretrained(
+    tokenizer = AutoTokenizer.from_pretrained(
         model_args.model_name_or_path, use_fast=True
     )
     p_encoder = klueRobertaEncoder(model_args.model_name_or_path)
     q_encoder = klueRobertaEncoder(model_args.model_name_or_path)
 
     rt_train_dataset = RtTrainDataset(
-        train_dataset, tokinzer, model_name=model_args.model_name_or_path
+        train_dataset, tokenizer, model_name=model_args.model_name_or_path
     )
 
     rt_train_loader = DataLoader(
@@ -175,7 +166,7 @@ def main(model_args, data_args, training_args):
         training_args, p_encoder, q_encoder, rt_train_loader, data_args.top_k_retrieval
     )
 
-    save_encoder(p_encoder, q_encoder, training_args, data_args)
+    save_encoder(encoder_args.model_name_or_path, p_encoder, q_encoder, training_args, data_args)
 
 
 if __name__ == "__main__":

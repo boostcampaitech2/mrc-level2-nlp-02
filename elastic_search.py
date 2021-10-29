@@ -66,7 +66,7 @@ def run_elastic_dense_retrieval(
 
   questions = datasets['validation']['question']
   ids = datasets['validation']['id']
-  answers = datasets['validation']['answers']
+  # answers = datasets['validation']['answers']########EVAL########
   # breakpoint()
   # q_encoder = BertEncoder.from_pretrained('encoders/q_encoder_neg').to('cuda') ########################
   q_encoder = RobertaEncoder.from_pretrained('encoders/q_encoder_neg_sen1').to('cuda') 
@@ -80,7 +80,8 @@ def run_elastic_dense_retrieval(
     relevent_context = search_with_elastic(es, question, data_args, q_encoder, tokenizer)
     relevent_contexts.append(relevent_context)
 
-  df = pd.DataFrame({'id':ids, 'question':questions, 'context':relevent_contexts, 'answers':answers})
+  # df = pd.DataFrame({'id':ids, 'question':questions, 'context':relevent_contexts, 'answers':answers})########EVAL########
+  df = pd.DataFrame({'id':ids, 'question':questions, 'context':relevent_contexts})
   datasets = DatasetDict({"validation": Dataset.from_pandas(df)})
 
   return datasets
@@ -156,8 +157,9 @@ def search_with_elastic(
           },
           "script": {
             # "source": "cosineSimilarity(params.queryVector, doc['vector'])",
+            "source": "_score * cosineSimilarity(params.queryVector, doc['vector']) / (_score + cosineSimilarity(params.queryVector, doc['vector']))",
             # "source": "_score * cosineSimilarity(params.queryVector, doc['vector']) / (_score + cosineSimilarity(params.queryVector, doc['vector'])) + cosineSimilarity(params.queryVector, doc['vector']) * _score / (_score + cosineSimilarity(params.queryVector, doc['vector']))",
-            "source": "_score * cosineSimilarity(params.queryVector, doc['vector'])",
+            # "source": "_score * cosineSimilarity(params.queryVector, doc['vector'])",
             "params": {
               "queryVector": q_output
             }
@@ -184,7 +186,7 @@ def search_with_elastic(
   
   for i in range(data_args.top_k_retrieval):
     score = res['hits']['hits'][i]['_score']
-    if score > max_score * 0.85:#######################################
+    if score > max_score * 0.90:#######################################
       relevent_contexts += res['hits']['hits'][i]['_source']['text']
       relevent_contexts += ' '
     else:

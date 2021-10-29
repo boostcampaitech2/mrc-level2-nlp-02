@@ -64,6 +64,7 @@ def main():
     parser = HfArgumentParser(
         (ModelArguments, DataTrainingArguments, TrainingArguments, LoggingArguments)
     )
+<<<<<<< HEAD
     (
         model_args,
         data_args,
@@ -75,16 +76,26 @@ def main():
     training_args.per_device_eval_batch_size = 512
 
     # wandb
+=======
+    model_args, data_args, training_args, log_args = parser.parse_args_into_dataclasses()
+       
+    #wandb
+>>>>>>> dev
     load_dotenv(dotenv_path=log_args.dotenv_path)
     WANDB_AUTH_KEY = os.getenv("WANDB_AUTH_KEY")
     wandb.login(key=WANDB_AUTH_KEY)
-
+    
     wandb.init(
         entity="klue-level2-nlp-02",
+<<<<<<< HEAD
         project="mrc_project_1",
         name=log_args.wandb_name + "_eval"
         if training_args.do_eval == True
         else "_inference",
+=======
+        project=log_args.project_name,
+        name=log_args.wandb_name + "_eval" if training_args.do_eval==True else "_inference",
+>>>>>>> dev
         group=model_args.model_name_or_path,
     )
     wandb.config.update(training_args)
@@ -155,7 +166,6 @@ def main():
     # eval or predict mrc model
     if training_args.do_eval or training_args.do_predict:
         run_mrc(data_args, training_args, model_args, datasets, tokenizer, model)
-
 
 def run_dense_retrieval(
     model_checkpoint: str,

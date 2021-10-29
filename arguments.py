@@ -129,6 +129,10 @@ class DataTrainingArguments:
         default=False,
         metadata={"help": "Elastic search re-config flag"},
     )
+    dense_rt_path: str = field(
+        default=None,
+        metadata={"help":"Dense retriever path (The dir contains only one p/q encoder each)"},
+    )
 
 @dataclass
 class LoggingArguments:

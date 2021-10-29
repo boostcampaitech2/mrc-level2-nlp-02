@@ -1,19 +1,17 @@
 import sys
+import os
 
-sys.path.append("/opt/ml/code/")
+if os.path.dirname(os.path.abspath(os.path.dirname(__file__))) in sys.path :
+    sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 
 import warnings
 
 warnings.filterwarnings("ignore")
 
-import json
 import random
 import numpy as np
 import pandas as pd
 from tqdm.auto import tqdm
-from pprint import pprint
-
-from sklearn.feature_extraction.text import TfidfVectorizer
 
 import torch
 from torch.utils.data import DataLoader, TensorDataset
@@ -29,6 +27,7 @@ from transformers import (
     TrainingArguments,
     RobertaModel,
     RobertaPreTrainedModel,
+    set_seed,
 )
 import transformers
 from elasticsearch import Elasticsearch
@@ -38,22 +37,13 @@ es = Elasticsearch([{"host": "localhost", "port": 9200}])
 import model_encoder
 
 dataset = load_from_disk("../data/train_dataset")["validation"]
-
-# 난수 고정
-def set_seed(random_seed):
-    torch.manual_seed(random_seed)
-    torch.cuda.manual_seed(random_seed)
-    torch.cuda.manual_seed_all(random_seed)  # if use multi-GPU
-    random.seed(random_seed)
-    np.random.seed(random_seed)
-
-
 set_seed(42)  # magic number :)
 
 
 class DenseRetrieval:
     def __init__(
         self,
+        train_args,
         args,
         train_dataset,
         valid_dataset,
@@ -64,6 +54,20 @@ class DenseRetrieval:
     ):
 
         self.args = args
+        train_dataset.cleanup_cache_files()
+        if train_args.Qgen :
+            print(" " + "*" * 50, "\n", "*" * 50, "\n", "*" * 50)
+            print(" ***** rtt 데이터 병합 전 데이터 개수: ", len(train_dataset), "******")
+            gen_data = pd.read_csv("/opt/ml/mrc-level2-nlp-02/csv/question_generation.csv", index_col=0)
+
+            train_data = train_dataset.to_pandas()
+            new_data = pd.concat([train_data, gen_data])[['context','question']]
+            new_data = new_data.drop_duplicates(subset="question").reset_index(drop=True)
+            train_dataset = train_dataset.from_pandas(new_data)
+            print(" " + "*" * 50, "\n", "*" * 50, "\n", "*" * 50)
+            print(" ***** rtt 데이터 병합 후 데이터 개수: ", len(train_dataset), "******")
+            print(" " + "*" * 50, "\n", "*" * 50, "\n", "*" * 50, "\n\n")
+
         self.train_dataset = train_dataset
         self.valid_dataset = valid_dataset
         self.num_neg = num_neg
@@ -76,9 +80,7 @@ class DenseRetrieval:
         self.valid_answer_index = []
 
         self.prepare_in_batch_negative(train_dataset, num_neg, tokenizer, is_train=True)
-        self.prepare_in_batch_negative(
-            valid_dataset, num_neg, tokenizer, is_train=False
-        )
+        self.prepare_in_batch_negative(valid_dataset, num_neg, tokenizer, is_train=False)
 
     def prepare_in_batch_negative(self, dataset, num_neg, tokenizer, is_train):
 
@@ -484,6 +486,12 @@ class BertEncoder(BertPreTrainedModel):
         pooled_output = outputs[1]
         return pooled_output
 
+import argparse
+parser = argparse.ArgumentParser()
+parser.add_argument('--epochs', type=int, default=2)
+parser.add_argument('--dir', type=str, default='encoders/sentence-klue-roberta-base_rttQgen')
+parser.add_argument('--Qgen', type=bool, default=False)
+train_args = parser.parse_args()
 
 train_dataset = load_from_disk("../data/train_dataset")["train"]
 valid_dataset = load_from_disk("../data/train_dataset")["validation"]
@@ -497,10 +505,12 @@ args = TrainingArguments(
     learning_rate=5e-6,
     per_device_train_batch_size=4,
     per_device_eval_batch_size=4,
-    num_train_epochs=2,
+    num_train_epochs=train_args.epochs,
     weight_decay=0.01,
 )
 
+p_ecoder_dir = os.path.join(train_args.dir+str(train_args.epochs), 'p_encoder_neg_sen1')
+q_ecoder_dir = os.path.join(train_args.dir+str(train_args.epochs), 'q_encoder_neg_sen1')
 # model_checkpoint = 'klue/bert-base'
 
 model_checkpoint = "Huffon/sentence-klue-roberta-base"
@@ -511,14 +521,11 @@ tokenizer = AutoTokenizer.from_pretrained(model_checkpoint)
 # p_encoder = BertEncoder.from_pretrained(model_checkpoint).to(args.device)
 # q_encoder = BertEncoder.from_pretrained(model_checkpoint).to(args.device)
 
-p_encoder = model_encoder.RobertaEncoder.from_pretrained(model_checkpoint).to(
-    args.device
-)
-q_encoder = model_encoder.RobertaEncoder.from_pretrained(model_checkpoint).to(
-    args.device
-)
+p_encoder = model_encoder.RobertaEncoder.from_pretrained(model_checkpoint).to(args.device)
+q_encoder = model_encoder.RobertaEncoder.from_pretrained(model_checkpoint).to(args.device)
 
 retriever = DenseRetrieval(
+    train_args,
     args=args,
     train_dataset=train_dataset,
     valid_dataset=valid_dataset,
@@ -531,5 +538,8 @@ retriever = DenseRetrieval(
 
 retriever.train()
 
-retriever.p_encoder.save_pretrained("encoders/p_encoder_neg_sen1")
-retriever.q_encoder.save_pretrained("encoders/q_encoder_neg_sen1")
+# retriever.p_encoder.save_pretrained("encoders/sentence-klue-roberta-base/p_encoder_neg_sen1")
+# retriever.q_encoder.save_pretrained("encoders/sentence-klue-roberta-base/q_encoder_neg_sen1")
+
+retriever.p_encoder.save_pretrained(p_ecoder_dir)
+retriever.q_encoder.save_pretrained(q_ecoder_dir)

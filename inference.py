@@ -34,9 +34,11 @@ from transformers import (
 from utils_qa import postprocess_qa_predictions, check_no_error
 from trainer_qa import QuestionAnsweringTrainer
 
+from retriever.model_encoder import BertEncoder
 from retriever.retriever_sparse_BM25 import SparseRetrieval
-from retriever.elastic_search import run_elastic_sparse_retrieval
 from retriever.retriever_dense import DenseRetrieval
+from retriever.elastic_search_sparse import run_elastic_sparse_retrieval
+from retriever.elastic_search_ensemble import run_elastic_ensemble_retrieval
 
 from arguments import (
     ModelArguments,
@@ -47,9 +49,6 @@ from arguments import (
 import wandb
 from dotenv import load_dotenv
 import os
-
-from retriever.model_encoder import BertEncoder
-
 
 from preprocessor import Preprocessor
 
@@ -132,16 +131,23 @@ def main():
             training_args,
             data_args,
         )
+    elif data_args.eval_retrieval == "dense":
+        datasets = run_dense_retrieval(
+            "klue/bert-base", datasets, training_args, data_args
+        )
     elif data_args.eval_retrieval == "elastic_sparse":
         datasets = run_elastic_sparse_retrieval(
             datasets,
             training_args,
             data_args,
         )
-    elif data_args.eval_retrieval == "dense":
-        datasets = run_dense_retrieval(
-            "klue/bert-base", datasets, training_args, data_args
+    elif data_args.eval_retrieval == "elastic_ensemble":
+        datasets = run_elastic_ensemble_retrieval(
+            datasets,
+            training_args,
+            data_args,
         )
+
 
     # eval or predict mrc model
     if training_args.do_eval or training_args.do_predict:

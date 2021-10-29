@@ -28,10 +28,6 @@ class EncoderModelArguments:
         default=False,
         metadata={"help": "Load customized roberta tokenizer"},
     )
-    batch_size: int = field(
-        default=1,
-        metadata={"help": "Load customized roberta tokenizer"},
-    )
 
 
 @dataclass
@@ -62,8 +58,12 @@ class RtDataTrainingArguments:
         default="/opt/ml/data/bm25",
         metadata={"help": "The path of bm25 csv"},
     )
-    pickle_save_dir: Optional[str] = field(
+    train_train_pickle_save_dir: Optional[str] = field(
         default="/opt/ml/data/train_pickle",
+        metadata={"help": "The path of custom_dataset"},
+    )
+    valid_train_pickle_save_dir: Optional[str] = field(
+        default="/opt/ml/data/valid_pickle",
         metadata={"help": "The path of custom_dataset"},
     )
     preprocessing_pattern: str = field(

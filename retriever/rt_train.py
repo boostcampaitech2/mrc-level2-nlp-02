@@ -37,7 +37,7 @@ def save_encoder(model_name, p_encoder, q_encoder, training_args, data_args):
     torch.save(q_encoder.state_dict(), q_encoder_path)
         
 
-def train(args, p_encoder, q_encoder, dataloader, top_k):
+def train(args, p_encoder, q_encoder, train_dataloader, valid_dataloader, top_k):
     print("training by bm25 negative sampling data !!!")
     batch_size = args.per_device_train_batch_size
     accumulation_step = args.gradient_accumulation_steps
@@ -53,15 +53,15 @@ def train(args, p_encoder, q_encoder, dataloader, top_k):
     optimizer = AdamW(
         optimizer_grouped_parameters, lr=args.learning_rate, eps=args.adam_epsilon
     )
-    t_total = (len(dataloader) // args.gradient_accumulation_steps * args.num_train_epochs)
+    t_total = (len(train_dataloader) // args.gradient_accumulation_steps * args.num_train_epochs)
 
     scheduler = get_linear_schedule_with_warmup(
         optimizer, num_warmup_steps=args.warmup_steps, num_training_steps=t_total
     )
     scaler = GradScaler()
 
-    p_encoder.to(args.device).train()
-    q_encoder.to(args.device).train()
+    p_encoder.to(args.device)
+    q_encoder.to(args.device)
     p_encoder.zero_grad()
     q_encoder.zero_grad()
     optimizer.zero_grad()
@@ -71,8 +71,10 @@ def train(args, p_encoder, q_encoder, dataloader, top_k):
     epochs = tqdm(range(int(args.num_train_epochs)), desc="Epoch")
 
     for _ in epochs:
-        with tqdm(dataloader, unit="batch") as tepoch:
+        with tqdm(train_dataloader, unit="batch") as tepoch:
             for idx, batch in enumerate(tepoch):
+                p_encoder.train()
+                q_encoder.train()
 
                 if len(batch) == 5:
                     p_inputs = {
@@ -114,7 +116,7 @@ def train(args, p_encoder, q_encoder, dataloader, top_k):
 
                 scaler.scale(loss).backward()
 
-                if ((idx + 1) % accumulation_step == 0) or ((idx + 1) == len(dataloader)):
+                if ((idx + 1) % accumulation_step == 0) or ((idx + 1) == len(train_dataloader)):
                     scaler.step(optimizer)
                     scaler.update()
                     scheduler.step()
@@ -122,6 +124,58 @@ def train(args, p_encoder, q_encoder, dataloader, top_k):
                     optimizer.zero_grad()
                     p_encoder.zero_grad()
                     q_encoder.zero_grad()
+
+                    del p_inputs
+                    del q_inputs
+                
+                if ((idx + 1) % args.eval_step == 0) or ((idx + 1) == len(train_dataloader)):
+                    for valid_batch in tqdm(valid_dataloader):
+                        total_cnt = len(valid_dataloader.dataset)
+                        valid_loss = 0
+                        valid_acc = 0
+                        with torch.no_grad():
+                            p_encoder.eval()
+                            q_encoder.eval()
+
+                            if len(batch) == 5:
+                                p_inputs = {
+                                    "input_ids": valid_batch[0].view(batch_size * top_k, -1).to(args.device),  # (batch_size * tok_k, emb_dim)
+                                    "attention_mask": valid_batch[1].view(batch_size * top_k, -1).to(args.device),  # (batch_size, tok_k, emb_dim)
+                                }
+                                q_inputs = {
+                                    "input_ids": valid_batch[2].view(batch_size, -1).to(args.device),  # (batch_size, emb_dim)
+                                    "attention_mask": valid_batch[3].view(batch_size, -1).to(args.device),  # (batch_size, emb_dim)
+                                }
+                                targets = valid_batch[4].long().to(args.device)
+                            else:
+                                p_inputs = {
+                                    "input_ids": valid_batch[0].view(batch_size * top_k, -1).to(args.device),
+                                    "attention_mask":valid_batch[1].view(batch_size * top_k, -1).to(args.device),
+                                    "token_type_ids": valid_batch[2].view(batch_size * top_k, -1).to(args.device),
+                                }
+                                q_inputs = {
+                                    "input_ids": valid_batch[3].view(batch_size, -1).to(args.device),
+                                    "attention_mask": valid_batch[4].view(batch_size, -1).to(args.device),
+                                    "token_type_ids": valid_batch[5].view(batch_size, -1).to(args.device),
+                                }
+                                targets = valid_batch[6].long().to(args.device)
+                            p_outputs = p_encoder(**p_inputs).to('cpu')
+                            q_outputs = q_encoder(**q_inputs).to('cpu')
+
+                            p_outputs = p_outputs.view(batch_size, top_k, -1)  # (batch_size, tok_k, emb_dim)
+                            q_outputs = q_outputs.view(batch_size, 1, -1)  # (batch_size, 1, emb_dim)
+
+                            sim_scores = torch.bmm(q_outputs, p_outputs.transpose(1, 2)).squeeze()  # (batchsize, top_k)
+                            sim_scores = sim_scores.view(batch_size, -1)
+                            
+                            prediction = torch.argmax(sim_scores, dim=-1)
+
+                            valid_acc += (prediction == targets).sum().item()
+                            valid_loss += F.nll_loss(sim_scores, targets).item()
+
+                        print(f"valid accuracy : {valid_acc/total_cnt:.2%}")
+                        print(f"valid loss : {valid_loss/len(valid_dataloader):.3f}")
+                             
 
     return p_encoder, q_encoder
 
@@ -135,14 +189,20 @@ def main(model_args, data_args, training_args):
     if data_args.preprocessing_pattern == None:
         data_args.preprocessing_pattern = 0
 
-    custom_pickle = os.path.join(
-        data_args.pickle_save_dir, f"bm25_top{data_args.top_k_retrieval}_pp{data_args.preprocessing_pattern}.pickle"
+    train_custom_pickle = os.path.join(
+        data_args.train_pickle_save_dir, f"bm25_top{data_args.top_k_retrieval}_pp{data_args.preprocessing_pattern}.pickle"
+    )
+    valid_custom_pickle = os.path.join(
+        data_args.valid_pickle_save_dir, f"bm25_top{data_args.top_k_retrieval}_pp{data_args.preprocessing_pattern}.pickle"
     )
 
-    print(f"custom data is from {custom_pickle}")
+    print(f"train custom data is from {train_custom_pickle}")
+    print(f"train custom data is from {valid_custom_pickle}")
 
-    with open(custom_pickle, "rb") as f:
+    with open(train_custom_pickle, "rb") as f:
         train_dataset = pickle.load(f)
+    with open(valid_custom_pickle, "rb") as f:
+        valid_dataset = pickle.load(f)
 
     tokenizer = AutoTokenizer.from_pretrained(
         model_args.model_name_or_path, use_fast=True
@@ -153,17 +213,26 @@ def main(model_args, data_args, training_args):
     rt_train_dataset = RtTrainDataset(
         train_dataset, tokenizer, model_name=model_args.model_name_or_path
     )
+    rt_valid_dataset = RtTrainDataset(
+        valid_dataset, tokenizer, model_name=model_args.model_name_or_path
+    )
 
     rt_train_loader = DataLoader(
         rt_train_dataset,
         shuffle=True,
         batch_size=training_args.per_device_train_batch_size,
     )
+    rt_valid_loader = DataLoader(
+        rt_valid_dataset,
+        batch_size=training_args.per_device_valid_batch_size,
+    )
     print(f"length of train dataset : {len(rt_train_dataset)}")
     print(f"length of train dataloader : {len(rt_train_loader)}")
+    print(f"length of valid dataset : {len(rt_valid_dataset)}")
+    print(f"length of valid dataloader : {len(rt_valid_loader)}")
 
     p_encoder, q_encoder = train(
-        training_args, p_encoder, q_encoder, rt_train_loader, data_args.top_k_retrieval
+        training_args, p_encoder, q_encoder, rt_train_loader, rt_valid_loader, data_args.top_k_retrieval
     )
 
     save_encoder(encoder_args.model_name_or_path, p_encoder, q_encoder, training_args, data_args)
@@ -175,8 +244,6 @@ if __name__ == "__main__":
     )
 
     encoder_args, rt_data_args, training_args = parser.parse_args_into_dataclasses()
-
-    training_args.per_device_train_batch_size = encoder_args.batch_size
 
     main(encoder_args, rt_data_args, training_args)
 

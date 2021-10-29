@@ -117,8 +117,6 @@ def main(model_args, data_args, training_args):
 
     wiki_texts = loading_prepro_wiki(data_args, tokenizer)
 
-    training_args.per_device_eval_batch_size = 16
-
     wiki_embedding = save_and_load_wiki_embedding(model_args.model_name_or_path, training_args, data_args, p_encoder, wiki_texts, tokenizer)
 
 if __name__ == "__main__":
@@ -127,7 +125,5 @@ if __name__ == "__main__":
     )
 
     encoder_args, rt_data_args, training_args = parser.parse_args_into_dataclasses()
-
-    training_args.per_device_train_batch_size = encoder_args.batch_size
 
     main(encoder_args, rt_data_args, training_args)

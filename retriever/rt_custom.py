@@ -42,6 +42,8 @@ def make_custom_dataset_with_bm25(
     custom_dataset["top_k_passage"] = top_k_passage
     custom_dataset["target"] = target
 
+    os.makedirs(save_path, exist_ok=True)
+
     file_name = os.path.join(save_path, f"bm25_top{top_k}_pp{pt_num}.pickle")
 
     with open(file_name, "wb") as f:
@@ -66,25 +68,39 @@ def main(model_args, data_args):
     if data_args.preprocessing_pattern == None:
         data_args.preprocessing_pattern = 0
 
-    bm25_path = os.path.join(
+    bm25_path_train = os.path.join(
         data_args.save_dir,
         f"bm25_top{data_args.top_k_retrieval}_pp{data_args.preprocessing_pattern}.csv",
+    )
+    bm25_path_valid = os.path.join(
+        data_args.save_dir,
+        f"bm25_top{data_args.top_k_retrieval}_pp{data_args.preprocessing_pattern}_val.csv",
     )
 
     retriever.get_sparse_BM25()
 
-    if os.path.isfile(bm25_path):
-        df = pd.read_csv(bm25_path)
+    if os.path.isfile(bm25_path_train) and os.path.isfile(bm25_path_valid):
+        df_train = pd.read_csv(bm25_path_train)
+        df_valid = pd.read_csv(bm25_path_valid)
     else:
-        df = retriever.retrieve_BM25(
+        df_train = retriever.retrieve_BM25(
             datasets["train"],
             topk=data_args.top_k_retrieval,
             score_ratio=data_args.score_ratio,
         )
-        df.to_csv(bm25_path, index=False)
+        df_valid = retriever.retrieve_BM25(
+            datasets["validation"],
+            topk=data_args.top_k_retrieval,
+            score_ratio=data_args.score_ratio,
+        )
+        df_train.to_csv(bm25_path_train, index=False)
+        df_valid.to_csv(bm25_path_valid, index=False)
 
     make_custom_dataset_with_bm25(
-        df, data_args.pickle_save_dir, top_k=data_args.top_k_retrieval, pt_num=data_args.preprocessing_pattern
+        df_train, data_args.train_pickle_save_dir, top_k=data_args.top_k_retrieval, pt_num=data_args.preprocessing_pattern
+    )
+    make_custom_dataset_with_bm25(
+        df_valid, data_args.valid_pickle_save_dir, top_k=data_args.top_k_retrieval, pt_num=data_args.preprocessing_pattern
     )
 
 

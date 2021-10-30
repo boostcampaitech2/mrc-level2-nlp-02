@@ -1,5 +1,8 @@
 import os
 import pickle
+from typing import List
+from datasets.arrow_dataset import Dataset
+from datasets.load import load_from_disk
 from tqdm.auto import tqdm
 import pandas as pd
 
@@ -11,6 +14,13 @@ from transformers import (
     TrainingArguments,
     HfArgumentParser,
     AutoTokenizer,
+)
+from datasets import (
+    load_from_disk,
+    Value,
+    Features,
+    Dataset,
+    DatasetDict
 )
 
 from rt_arguments import (
@@ -61,6 +71,7 @@ def save_and_load_wiki_embedding(model_name, training_args, data_args, p_encoder
 
     if os.path.isfile(os.path.join("/opt/ml/data/wiki", file_name)):
         emb_df = pd.read_csv(os.path.join("/opt/ml/data/wiki", file_name))
+        return emb_df
     else :
         wiki_seqs = tokenizer(
         wiki_texts, padding="max_length", truncation=True, return_tensors="pt"
@@ -96,11 +107,63 @@ def save_and_load_wiki_embedding(model_name, training_args, data_args, p_encoder
         print("\nMake wiki embedding csv file !!!")
 
         emb_df = pd.DataFrame(p_embs)
-
         emb_df.to_csv(os.path.join("/opt/ml/data/wiki", file_name), index=False)
         
-def main(model_args, data_args, training_args):
+        return emb_df
 
+def retrieve(q_encoder, tokenizer, queries: Dataset, wiki_texts : List, wiki_embedding : pd.DataFrame, topk : int):
+    print("start dense retrieve!!!")
+
+    p_embs = torch.Tensor(wiki_embedding.values)
+
+    print(f"passage size : {p_embs.shape}")
+
+    q_encoder.to("cuda")
+
+    with torch.no_grad():
+        q_seqs = tokenizer(
+            queries["question"],
+            padding=True,
+            truncation=True,
+            return_tensors="pt",
+            return_token_type_ids=False,
+        ).to("cuda")
+        q_embs = q_encoder(**q_seqs).to("cpu")
+
+    sim_scores = torch.matmul(q_embs, p_embs.T) # (quries, wiki_data_len)
+    
+    print(f"sim_score size : {sim_scores.shape}")  
+
+    doc_scores = []
+    doc_indices = []
+
+    for i in range(len(queries)):
+        rank = torch.argsort(sim_scores[i], dim=0, descending=True)
+        doc_scores.append(sim_scores[i][rank[:topk]])
+        doc_indices.append(rank[:topk])
+
+    # Retrieve한 Passage를 pd.DataFrame으로 반환합니다.
+    total = []
+    for idx, example in enumerate(tqdm(queries, desc="Dense retrieval: ")):
+        tmp = {
+            # Query와 해당 id를 반환합니다.
+            "question": example["question"],
+            "id": example["id"],
+            # Retrieve한 Passage의 id, context를 반환합니다.
+            "context_id": doc_indices[idx],
+            "context": " ".join([wiki_texts[pid] for pid in doc_indices[idx]]),
+        }
+        if "context" in example.keys() and "answers" in example.keys():
+            # validation 데이터를 사용하면 ground_truth context와 answer도 반환합니다.
+            tmp["original_context"] = example["context"]
+            tmp["answers"] = example["answers"]
+        total.append(tmp)
+    top_k_passage = pd.DataFrame(total)
+    return top_k_passage
+
+
+def main(model_args, data_args, training_args):
+    print(f"Inference !!!")
     print(f"model is from {encoder_args.model_name_or_path}")
     print(f"data is from {data_args.dataset_name}")
 
@@ -117,7 +180,29 @@ def main(model_args, data_args, training_args):
 
     wiki_texts = loading_prepro_wiki(data_args, tokenizer)
 
-    wiki_embedding = save_and_load_wiki_embedding(model_args.model_name_or_path, training_args, data_args, p_encoder, wiki_texts, tokenizer)
+    wiki_embedding_df = save_and_load_wiki_embedding(model_args.model_name_or_path, training_args, data_args, p_encoder, wiki_texts, tokenizer)
+
+    datasets = load_from_disk(data_args.dataset_name)
+
+    top_k_df = retrieve(q_encoder, tokenizer, datasets, wiki_texts, wiki_embedding_df, data_args.DRP_top_k)
+
+    if training_args.do_predict:
+        f = Features(
+            {
+                "context": Value(dtype="string", id=None),
+                "id": Value(dtype="string", id=None),
+                "question": Value(dtype="string", id=None),
+            }
+        )
+    datasets = DatasetDict({"validation": Dataset.from_pandas(top_k_df, features=f)})
+
+    path = f"{model_args.model_name.split('/')[-1]}_ep{int(training_args.num_train_epochs)}_bs{training_args.per_device_train_batch_size}_topk{data_args.DRP_top_k}_acs{training_args.gradient_accumulation_steps}_pp{data_args.preprocessing_pattern}"
+    
+    folder_name = os.path.join("opt/ml/data/top_k", path)
+    os.makedirs(folder_name, exist_ok=True)
+
+    with open(os.path.join(folder_name, "DPR_datasets.pickle"), "wb") as f:
+        pickle.dump(datasets, f)
 
 if __name__ == "__main__":
     parser = HfArgumentParser(

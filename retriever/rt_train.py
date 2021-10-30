@@ -40,6 +40,8 @@ def save_encoder(model_name, p_encoder, q_encoder, training_args, data_args):
 def train(args, p_encoder, q_encoder, train_dataloader, valid_dataloader, top_k):
     print("training by bm25 negative sampling data !!!")
     batch_size = args.per_device_train_batch_size
+    valid_batch_size = args.per_device_eval_batch_size
+
     accumulation_step = args.gradient_accumulation_steps
     print(f"accumulation_step : {accumulation_step}")
 
@@ -127,60 +129,60 @@ def train(args, p_encoder, q_encoder, train_dataloader, valid_dataloader, top_k)
 
                     del p_inputs
                     del q_inputs
-                
-                if ((idx + 1) % args.eval_step == 0) or ((idx + 1) == len(train_dataloader)):
+                    
+                if ((idx + 1) % args.eval_steps == 0) or ((idx + 1) == len(train_dataloader)):
+                    total_cnt = len(valid_dataloader.dataset)
+                    valid_loss = 0
+                    valid_acc = 0
                     for valid_batch in tqdm(valid_dataloader):
-                        total_cnt = len(valid_dataloader.dataset)
-                        valid_loss = 0
-                        valid_acc = 0
                         with torch.no_grad():
                             p_encoder.eval()
                             q_encoder.eval()
 
                             if len(batch) == 5:
                                 p_inputs = {
-                                    "input_ids": valid_batch[0].view(batch_size * top_k, -1).to(args.device),  # (batch_size * tok_k, emb_dim)
-                                    "attention_mask": valid_batch[1].view(batch_size * top_k, -1).to(args.device),  # (batch_size, tok_k, emb_dim)
+                                    "input_ids": valid_batch[0].view(valid_batch_size * top_k, -1).to(args.device),  # (batch_size * tok_k, emb_dim)
+                                    "attention_mask": valid_batch[1].view(valid_batch_size * top_k, -1).to(args.device),  # (batch_size, tok_k, emb_dim)
                                 }
                                 q_inputs = {
-                                    "input_ids": valid_batch[2].view(batch_size, -1).to(args.device),  # (batch_size, emb_dim)
-                                    "attention_mask": valid_batch[3].view(batch_size, -1).to(args.device),  # (batch_size, emb_dim)
+                                    "input_ids": valid_batch[2].view(valid_batch_size, -1).to(args.device),  # (batch_size, emb_dim)
+                                    "attention_mask": valid_batch[3].view(valid_batch_size, -1).to(args.device),  # (batch_size, emb_dim)
                                 }
-                                targets = valid_batch[4].long().to(args.device)
+                                targets = valid_batch[4].long().to('cpu')
                             else:
                                 p_inputs = {
-                                    "input_ids": valid_batch[0].view(batch_size * top_k, -1).to(args.device),
-                                    "attention_mask":valid_batch[1].view(batch_size * top_k, -1).to(args.device),
-                                    "token_type_ids": valid_batch[2].view(batch_size * top_k, -1).to(args.device),
+                                    "input_ids": valid_batch[0].view(valid_batch_size * top_k, -1).to(args.device),
+                                    "attention_mask":valid_batch[1].view(valid_batch_size * top_k, -1).to(args.device),
+                                    "token_type_ids": valid_batch[2].view(valid_batch_size * top_k, -1).to(args.device),
                                 }
                                 q_inputs = {
-                                    "input_ids": valid_batch[3].view(batch_size, -1).to(args.device),
-                                    "attention_mask": valid_batch[4].view(batch_size, -1).to(args.device),
-                                    "token_type_ids": valid_batch[5].view(batch_size, -1).to(args.device),
+                                    "input_ids": valid_batch[3].view(valid_batch_size, -1).to(args.device),
+                                    "attention_mask": valid_batch[4].view(valid_batch_size, -1).to(args.device),
+                                    "token_type_ids": valid_batch[5].view(valid_batch_size, -1).to(args.device),
                                 }
-                                targets = valid_batch[6].long().to(args.device)
+                                targets = valid_batch[6].long().to('cpu')
                             p_outputs = p_encoder(**p_inputs).to('cpu')
                             q_outputs = q_encoder(**q_inputs).to('cpu')
 
-                            p_outputs = p_outputs.view(batch_size, top_k, -1)  # (batch_size, tok_k, emb_dim)
-                            q_outputs = q_outputs.view(batch_size, 1, -1)  # (batch_size, 1, emb_dim)
+                            p_outputs = p_outputs.view(valid_batch_size, top_k, -1)  # (batch_size, tok_k, emb_dim)
+                            q_outputs = q_outputs.view(valid_batch_size, 1, -1)  # (batch_size, 1, emb_dim)
 
                             sim_scores = torch.bmm(q_outputs, p_outputs.transpose(1, 2)).squeeze()  # (batchsize, top_k)
-                            sim_scores = sim_scores.view(batch_size, -1)
-                            
+                            sim_scores = sim_scores.view(valid_batch_size, -1)
+
                             prediction = torch.argmax(sim_scores, dim=-1)
 
                             valid_acc += (prediction == targets).sum().item()
-                            valid_loss += F.nll_loss(sim_scores, targets).item()
+                            valid_loss += F.cross_entropy(sim_scores, targets).item()
 
-                        print(f"valid accuracy : {valid_acc/total_cnt:.2%}")
-                        print(f"valid loss : {valid_loss/len(valid_dataloader):.3f}")
+                    print(f"valid accuracy : {valid_acc/total_cnt:.2%}")
+                    print(f"valid loss : {valid_loss/len(valid_dataloader):.3f}")
                              
 
     return p_encoder, q_encoder
 
 def main(model_args, data_args, training_args):
-
+    print(f"Train !!!")
     print(f"model is from {encoder_args.model_name_or_path}")
     print(f"data is from {data_args.dataset_name}")
 
@@ -197,7 +199,7 @@ def main(model_args, data_args, training_args):
     )
 
     print(f"train custom data is from {train_custom_pickle}")
-    print(f"train custom data is from {valid_custom_pickle}")
+    print(f"valid custom data is from {valid_custom_pickle}")
 
     with open(train_custom_pickle, "rb") as f:
         train_dataset = pickle.load(f)
@@ -224,7 +226,7 @@ def main(model_args, data_args, training_args):
     )
     rt_valid_loader = DataLoader(
         rt_valid_dataset,
-        batch_size=training_args.per_device_valid_batch_size,
+        batch_size=training_args.per_device_eval_batch_size,
     )
     print(f"length of train dataset : {len(rt_train_dataset)}")
     print(f"length of train dataloader : {len(rt_train_loader)}")

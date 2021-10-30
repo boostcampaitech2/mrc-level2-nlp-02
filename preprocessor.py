@@ -7,7 +7,7 @@ class Preprocessor :
                 "1" : re.compile("(\\n)+|(\\\\n)+|(\\xa0)|(\\u3000)"),
                 "2" : re.compile("(\\\\n)+|(\\n)+|[^a-zA-Z0-9가-힣ㄱ-ㅎㅏ-ㅣぁ-ゔァ-ヴー々〆〤一-龥()?!∧≪≫『』\'<>〈〉:「」＜＞<>》《・\"-“”\s\.\‘’%,]"),
                 "3" : re.compile('['+chr(0)+'-'+chr(31)+chr(8191)+'-'+chr(12288)+chr(55204)+'-'+chr(63743)+']')} # e.g \u3000 \u200d \u210e ...
-    
+    common = re.compile('(/s+)')
 
     @classmethod
     def preprocessing(self, data, pt_num): #pt_num 123_0 or 123_1
@@ -25,7 +25,9 @@ class Preprocessor :
             pd_data = pd.DataFrame({"contexts" : data})
             for num in pt_num:
                 preprocessing = lambda x : self.pattern_dict[num].sub(" ", x)
+                blank_remove = lambda x : self.common.sub(" ", x)
                 pd_data["contexts"] = pd_data.contexts.map(preprocessing)
+                pd_data["contexts"] = pd_data.contexts.map(blank_remove)
             data = pd_data.drop_duplicates("contexts").contexts.to_list()
         return data
 
@@ -53,5 +55,6 @@ class Preprocessor :
     def sen_preprocess(self, context, pt_num) :
         for num in pt_num:
             context = self.pattern_dict[num].sub(" ",context)
+            context = self.common.sub(" ", context)
         return context
 

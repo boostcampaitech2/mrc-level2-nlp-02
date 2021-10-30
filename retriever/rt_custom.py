@@ -2,6 +2,7 @@ import pandas as pd
 import os
 import pickle
 from typing import Optional
+import re
 
 from datasets import load_from_disk
 from transformers import AutoTokenizer, HfArgumentParser
@@ -12,15 +13,33 @@ from rt_arguments import (
     RtDataTrainingArguments,
 )
 
+pattern_dict={
+                "1" : re.compile("(\\n)+|(\\\\n)+|(\\xa0)|(\\u3000)"),
+                "2" : re.compile("(\\\\n)+|(\\n)+|[^a-zA-Z0-9가-힣ㄱ-ㅎㅏ-ㅣぁ-ゔァ-ヴー々〆〤一-龥()?!∧≪≫『』\'<>〈〉:「」＜＞<>》《・\"-“”\s\.\‘’%,]"),
+                "3" : re.compile('['+chr(0)+'-'+chr(31)+chr(8191)+'-'+chr(12288)+chr(55204)+'-'+chr(63743)+']')}
+common = re.compile('(\s+)')
 
 def make_custom_dataset_with_bm25(
     dataset: pd.DataFrame, save_path: str, top_k: int = 1, pt_num: Optional[str] = None
 ):
+
+    os.makedirs(save_path, exist_ok=True)
+
     custom_dataset = {}
 
     answers = dataset.answers.tolist()
     question = dataset.question.tolist()
     original_context = dataset.original_context.tolist()
+
+    pd_data = pd.DataFrame({"original_context" : original_context})
+    if pt_num is not None :
+        for num in pt_num:
+            preprocessing = lambda x : pattern_dict[num].sub(" ", x)
+            blank_remove = lambda x : common.sub(" ", x)
+            pd_data["original_context"] = pd_data.original_context.map(preprocessing)
+            pd_data["original_context"] = pd_data.original_context.map(blank_remove)
+        original_context = pd_data.original_context.to_list()
+
     top_k_passage = []
     target = []
 
@@ -41,8 +60,6 @@ def make_custom_dataset_with_bm25(
     custom_dataset["original_context"] = original_context
     custom_dataset["top_k_passage"] = top_k_passage
     custom_dataset["target"] = target
-
-    os.makedirs(save_path, exist_ok=True)
 
     file_name = os.path.join(save_path, f"bm25_top{top_k}_pp{pt_num}.pickle")
 
@@ -67,6 +84,8 @@ def main(model_args, data_args):
 
     if data_args.preprocessing_pattern == None:
         data_args.preprocessing_pattern = 0
+
+    os.makedirs(data_args.save_dir, exist_ok=True)
 
     bm25_path_train = os.path.join(
         data_args.save_dir,

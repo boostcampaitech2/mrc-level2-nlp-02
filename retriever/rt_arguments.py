@@ -51,18 +51,18 @@ class RtDataTrainingArguments:
     top_k_retrieval: int = field(
         default=1,
         metadata={
-            "help": "Define how many top-k passages to retrieve based on similarity."
+            "help": "Define how many top-k passages to retrieve based on bm25."
         },
     )
     save_dir: Optional[str] = field(
         default="/opt/ml/data/bm25",
         metadata={"help": "The path of bm25 csv"},
     )
-    train_train_pickle_save_dir: Optional[str] = field(
+    train_pickle_save_dir: Optional[str] = field(
         default="/opt/ml/data/train_pickle",
         metadata={"help": "The path of custom_dataset"},
     )
-    valid_train_pickle_save_dir: Optional[str] = field(
+    valid_pickle_save_dir: Optional[str] = field(
         default="/opt/ml/data/valid_pickle",
         metadata={"help": "The path of custom_dataset"},
     )
@@ -73,4 +73,10 @@ class RtDataTrainingArguments:
     score_ratio: float = field(
         default=0,
         metadata={"help": "Define the score ratio."},
+    )
+    DRP_top_k: int = field(
+        default=1,
+        metadata={
+            "help": "Define how many top-k passages to retrieve based on DPR."
+        },
     )

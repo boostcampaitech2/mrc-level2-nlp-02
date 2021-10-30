@@ -212,3 +212,5 @@ if __name__ == "__main__":
     encoder_args, rt_data_args, training_args = parser.parse_args_into_dataclasses()
 
     main(encoder_args, rt_data_args, training_args)
+    
+    print("Complete inference !!!")

@@ -32,7 +32,7 @@ def make_custom_dataset_with_bm25(
     original_context = dataset.original_context.tolist()
 
     pd_data = pd.DataFrame({"original_context" : original_context})
-    if pt_num is not None :
+    if pt_num in '123' :
         for num in pt_num:
             preprocessing = lambda x : pattern_dict[num].sub(" ", x)
             blank_remove = lambda x : common.sub(" ", x)
@@ -62,7 +62,7 @@ def make_custom_dataset_with_bm25(
     custom_dataset["target"] = target
 
     file_name = os.path.join(save_path, f"bm25_top{top_k}_pp{pt_num}.pickle")
-
+    
     with open(file_name, "wb") as f:
         pickle.dump(custom_dataset, f)
 
@@ -129,3 +129,5 @@ if __name__ == "__main__":
     encoder_args, rt_data_args = parser.parse_args_into_dataclasses()
 
     main(encoder_args, rt_data_args)
+
+    print("Complete making custom dataset !!!")

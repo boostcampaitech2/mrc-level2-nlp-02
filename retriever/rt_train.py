@@ -249,3 +249,4 @@ if __name__ == "__main__":
 
     main(encoder_args, rt_data_args, training_args)
 
+    print("Complete Train !!!")

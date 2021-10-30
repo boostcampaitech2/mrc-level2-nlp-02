@@ -7,7 +7,7 @@ class Preprocessor :
                 "1" : re.compile("(\\n)+|(\\\\n)+|(\\xa0)|(\\u3000)"),
                 "2" : re.compile("(\\\\n)+|(\\n)+|[^a-zA-Z0-9가-힣ㄱ-ㅎㅏ-ㅣぁ-ゔァ-ヴー々〆〤一-龥()?!∧≪≫『』\'<>〈〉:「」＜＞<>》《・\"-“”\s\.\‘’%,]"),
                 "3" : re.compile('['+chr(0)+'-'+chr(31)+chr(8191)+'-'+chr(12288)+chr(55204)+'-'+chr(63743)+']')} # e.g \u3000 \u200d \u210e ...
-    common = re.compile('(/s+)')
+    common = re.compile('(\s+)')
 
     @classmethod
     def preprocessing(self, data, pt_num): #pt_num 123_0 or 123_1

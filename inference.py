@@ -4,7 +4,6 @@ Open-Domain Question Answering 을 수행하는 inference 코드 입니다.
 대부분의 로직은 train.py 와 비슷하나 retrieval, predict 부분이 추가되어 있습니다.
 """
 
-
 import logging
 import sys
 from typing import Callable, List, Dict, NoReturn, Tuple
@@ -52,6 +51,7 @@ from retriever.model_encoder import BertEncoder
 
 
 from preprocessor import Preprocessor
+import pandas as pd
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +64,10 @@ def main():
         (ModelArguments, DataTrainingArguments, TrainingArguments, LoggingArguments)
     )
     model_args, data_args, training_args, log_args = parser.parse_args_into_dataclasses()
-       
+    
+    #trainingarguments
+    training_args.per_device_eval_batch_size = 8
+    
     #wandb
     load_dotenv(dotenv_path=log_args.dotenv_path)
     WANDB_AUTH_KEY = os.getenv("WANDB_AUTH_KEY")
@@ -103,8 +106,24 @@ def main():
     #cache 파일을 정리합니다.
     datasets.cleanup_cache_files()
     
-    #기본 전처리를 진행합니다.
+    if training_args.do_predict==True and data_args.add_special_tokens_query_flag:
+        q_type_data = pd.read_csv("./csv/question_tag_testset.csv",index_col=0)
+        train_data = datasets['validation'].to_pandas()
+        train_data['question'] = train_data['question']+q_type_data['Q_tag']
+        datasets['validation'] = datasets['validation'].from_pandas(train_data)
+        print(datasets['validation']['question'][0])
+        print("======================================= predict Tag complete============================")
+        
     if training_args.do_eval==True and data_args.preprocessing_pattern != None:
+        if data_args.add_special_tokens_query_flag:
+            q_type_data = pd.read_csv("./csv/question_tag_validset.csv",index_col=0)
+            
+            train_data = datasets['validation'].to_pandas()
+            train_data['question']=train_data['question']+q_type_data['Q_tag']
+            datasets['validation'] = datasets['validation'].from_pandas(train_data)
+            print(datasets['validation']['question'][0])
+            print("======================================= Tag complete============================")
+
         datasets = Preprocessor.preprocessing(data = datasets, pt_num=data_args.preprocessing_pattern)
     print(datasets)
     

@@ -129,6 +129,10 @@ class DataTrainingArguments:
         default=False,
         metadata={"help": "Elastic search re-config flag"},
     )
+    add_special_tokens_query_flag:bool = field(
+        default=False,
+        metadata={"help": "add special tokens about question type"},
+    )
 
 @dataclass
 class LoggingArguments:

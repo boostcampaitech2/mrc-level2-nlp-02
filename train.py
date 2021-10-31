@@ -58,7 +58,7 @@ def main():
     # [참고] argument를 manual하게 수정하고 싶은 경우에 아래와 같은 방식을 사용할 수 있습니다
     # training_args.per_device_train_batch_size = 4
     # print(training_args.per_device_train_batch_size)
-    # training_args.num_train_epochs=1
+    training_args.num_train_epochs=1
 
     print(f"model is from {model_args.model_name_or_path}")
     print(f"data is from {data_args.dataset_name}")
@@ -94,15 +94,46 @@ def main():
             data_selected = data_args.data_selected,
             datasets=datasets,
             add_special_tokens_flag = data_args.add_special_tokens_flag,
+            add_special_tokens_query_flag = data_args.add_special_tokens_query_flag,
             use_fast=True)
     
+    
     print("\n","num of added vocab in tokenizer : ", len(tokenizer.vocab) - config.vocab_size)
+    
+    # Question tag 붙이기
+    if data_args.add_special_tokens_query_flag:
+        if training_args.do_train:
+            q_type_data = pd.read_csv("./csv/question_tag_trainset.csv",index_col=0)
+            
+            train_data = datasets['train'].to_pandas()
+            train_data['question']=train_data['question']+q_type_data['Q_tag']
+            datasets['train'] = datasets['train'].from_pandas(train_data)
+            
+            print(" "+"*"*50,"\n","*"*50,"\n","*"*50)
+            print(" ***** question tag 끝!: ", datasets['train']['question'][0],"******")
+            print(" "+"*"*50,"\n","*"*50,"\n","*"*50,"\n\n")
+        
+        elif training_args.do_eval:
+            q_type_data = pd.read_csv("./csv/question_tag_validset.csv",index_col=0)
+            
+            train_data = datasets['validation'].to_pandas()
+            train_data['question']=train_data['question']+q_type_data['Q_tag']
+            datasets['validation'] = datasets['validation'].from_pandas(train_data)
+            
+            print(" "+"*"*50,"\n","*"*50,"\n","*"*50)
+            print(" ***** question tag 끝!: ", datasets['validation']['question'][0],"******")
+            print(" "+"*"*50,"\n","*"*50,"\n","*"*50,"\n\n")
 
     # rtt 데이터셋이 존재할 경우 기존 데이터셋과 합칩니다.
     if data_args.rtt_dataset_name != None:
         print(" "+"*"*50,"\n","*"*50,"\n","*"*50)
         print(" ***** rtt 데이터 병합 전 데이터 개수: ", len(datasets['train']),"******")
-        rtt_data = pd.read_csv(data_args.rtt_dataset_name,  index_col=0)
+        rtt_data = pd.read_csv(data_args.rtt_dataset_name,index_col=0)
+        
+        if data_args.add_special_tokens_query_flag:
+            q_data = pd.read_csv("./csv/question_tag_rtt_papago_ner.csv",index_col=0)
+            rtt_data['question']=rtt_data['question']+q_data['Q_tag']
+            print(" ***** rtt question tag 끝!: ", rtt_data.loc[0]['question'],"******")
         rtt_data['answers'] = rtt_data.answers.map(eval)
 
         train_data = datasets['train'].to_pandas()
@@ -162,7 +193,7 @@ def run_mrc(
         column_names = datasets["train"].column_names
     else:
         column_names = datasets["validation"].column_names
-
+    
     question_column_name = "question" if "question" in column_names else column_names[0]
     context_column_name = "context" if "context" in column_names else column_names[1]
     answer_column_name = "answers" if "answers" in column_names else column_names[2]
@@ -175,7 +206,7 @@ def run_mrc(
     last_checkpoint, max_seq_length = check_no_error(
         data_args, training_args, datasets, tokenizer
     )
-
+    
     # Train preprocessing / 전처리를 진행합니다.
     def prepare_train_features(examples):
         # truncation과 padding(length가 짧을때만)을 통해 toknization을 진행하며, stride를 이용하여 overflow를 유지합니다.

@@ -122,6 +122,10 @@ class DataTrainingArguments:
         default=False,
         metadata={"help": "add special tokens"},
     )
+    pretrain_span_augmentation : bool = field(
+        default=False,
+        metadata={"help": "pretrain data using span augmentation"},
+    )
     num_neg: int = field(
         default=0, metadata={"help": "Define how many negative sampling dataset"},
     )

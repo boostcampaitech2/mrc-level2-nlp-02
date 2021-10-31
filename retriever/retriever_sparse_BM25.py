@@ -16,7 +16,12 @@ from preprocessor import Preprocessor
 
 from datasets import (
     Dataset,
-    )
+    Value,
+    Sequence,
+    Features,
+    Dataset,
+)
+
 
 @contextmanager
 def timer(name):
@@ -29,9 +34,10 @@ class SparseRetrieval:
     def __init__(
         self,
         tokenize_fn,
-        data_path: Optional[str] = '../data',
+        data_path: Optional[str] = '/opt/ml/data',
         context_path: Optional[str] = "wikipedia_documents.json",
         pt_num: Optional[str] = None,
+        add_special_tokens_flag : Optional[bool] = False
     ) -> NoReturn:
 
         """
@@ -60,14 +66,15 @@ class SparseRetrieval:
         with open(os.path.join(data_path,context_path) , "r", encoding="utf-8") as f:
             wiki = json.load(f)
 
-        if self.pt_num != None:
-            # self.contexts = list(map(lambda x : Preprocessor.preprocessing(data = x, pt_num=self.pt_num),self.contexts)) # Preprocessor.preprocessing(data = x, pt_num=self.pt_num)
-            self.contexts = Preprocessor.preprocessing(self.contexts, pt_num=self.pt_num)
-        
         self.contexts = list(
             dict.fromkeys([v["text"] for v in wiki.values()])
             )  # set 은 매번 순서가 바뀌므로
 
+        self.add_special_token_flag = add_special_tokens_flag
+        if self.pt_num != None:
+            # self.contexts = list(map(lambda x : Preprocessor.preprocessing(data = x, pt_num=self.pt_num),self.contexts)) # Preprocessor.preprocessing(data = x, pt_num=self.pt_num)
+            self.contexts = Preprocessor.preprocessing(self.contexts, pt_num=self.pt_num)
+        
         print(f"Lengths of unique contexts : {len(self.contexts)}")
 
         #corpus wiki 데이터를 전처리 합니다.
@@ -117,6 +124,96 @@ class SparseRetrieval:
             with open(bm_emd_path, "wb") as file:
                 pickle.dump(self.BM25, file)
             print("BM25_class_instant pickle saved.")
+
+
+    def retrieve_train_BM25(
+        self, dataset: Union[str, Dataset], topk: Optional[int] = 1,
+    ) -> Union[Tuple[List, List], pd.DataFrame]:
+        assert self.BM25 is not None and isinstance(dataset, Dataset)
+
+        total = []
+        
+        with timer("query exhaustive search"):
+            doc_scores, doc_indices = self.get_relevant_train_bulk_BM25(dataset, k=topk, )
+        for idx, example in enumerate(
+            tqdm(dataset, desc="BM25 retrieval: ")
+        ):
+
+            context = " [SPLIT] ".join([self.contexts[pid] for pid in doc_indices[idx]]) if self.split_special_token_flag \
+                else " ".join([self.contexts[pid] for pid in doc_indices[idx]])
+
+            tmp = {
+                # Query와 해당 id를 반환합니다.
+                "question": example["question"],
+                "id": example["id"],
+                # Retrieve한 Passage의 id, context를 반환합니다.
+                "context_id": doc_indices[idx],
+                "context": context,
+            }
+            if "context" in example.keys() and "answers" in example.keys():
+                # validation 데이터를 사용하면 ground_truth context와 answer도 반환합니다.
+                tmp["original_context"] = example["context"]
+                tmp["answers"] = example["answers"]
+            total.append(tmp)
+
+        cqas = pd.DataFrame(total)
+        f = Features(
+            {
+                "answers": Sequence(
+                    feature={
+                        "text": Value(dtype="string", id=None),
+                        "answer_start": Value(dtype="int32", id=None),
+                    },
+                    length=-1,
+                    id=None,
+                ),
+                "context": Value(dtype="string", id=None),
+                "id": Value(dtype="string", id=None),
+                "question": Value(dtype="string", id=None),
+            }
+        )
+        datasets = Dataset.from_pandas(cqas, features=f)
+        return datasets
+        
+    def get_relevant_train_bulk_BM25(
+        self, datasets: Dataset, k: Optional[int] = 1, 
+    ) -> Tuple[List, List]:
+
+        print("Build BM25 score, indices")
+
+        data_size = len(datasets)
+        queries = datasets['question']
+        contexts = datasets['context']
+
+        tokenized_queries= [self.tokenizer(i) for i in queries]        
+        doc_scores = []
+        doc_indices = []
+        for i in tqdm(range(data_size)):
+            scores = self.BM25.get_scores(tokenized_queries[i])
+            context_txt = contexts[i]
+            sorted_score = np.sort(scores)[::-1]
+            sorted_id = np.argsort(scores)[::-1]
+            
+            org_rank = self.contexts.index(context_txt)
+
+            selected_scores = [0]
+            selected_indices = [org_rank]
+            j = 1
+            size = 1
+            while(size < k) :
+                doc_id = sorted_id[j]
+                doc_score = sorted_score[j]
+
+                if doc_id != org_rank :
+                    selected_scores.append(doc_score)
+                    selected_indices.append(doc_id)
+                    size += 1
+                j += 1
+
+            doc_scores.append(selected_scores)
+            doc_indices.append(selected_indices)
+        return doc_scores, doc_indices
+    
 
     def retrieve_BM25(
         self, query_or_dataset: Union[str, Dataset], topk: Optional[int] = 1, score_ratio: Optional[float] = None

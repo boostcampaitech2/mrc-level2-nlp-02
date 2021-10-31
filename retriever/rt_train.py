@@ -25,7 +25,7 @@ from rt_dataset import RtTrainDataset
 
 def save_encoder(model_name, p_encoder, q_encoder, training_args, data_args):
     # 파일 이름 model_epoch_batch_topk_acs_pp(preprocessing pattern)
-    file_name = f"{model_name.split('/')[-1]}_ep{int(training_args.num_train_epochs)}_bs{training_args.per_device_train_batch_size}_topk{data_args.top_k_retrieval}_acs{training_args.gradient_accumulation_steps}_pp{data_args.preprocessing_pattern}"
+    file_name = f"{model_name.split('/')[-1]}_ep{int(training_args.num_train_epochs)}_bs{training_args.per_device_train_batch_size}_topk{data_args.top_k_retrieval}_acs{training_args.gradient_accumulation_steps}_pp{data_args.preprocessing_pattern}_lr{training_args.learning_rate}"
     full_path = os.path.join(training_args.output_dir, file_name)
 
     os.makedirs(full_path, exist_ok=True)
@@ -38,10 +38,10 @@ def save_encoder(model_name, p_encoder, q_encoder, training_args, data_args):
         
 
 def train(args, p_encoder, q_encoder, train_dataloader, valid_dataloader, top_k):
-    print("training by bm25 negative sampling data !!!")
     batch_size = args.per_device_train_batch_size
     valid_batch_size = args.per_device_eval_batch_size
-
+    print(f"epochs : {args.num_train_epochs}")
+    print(f"learning_rate : {args.learning_rate}")
     accumulation_step = args.gradient_accumulation_steps
     print(f"accumulation_step : {accumulation_step}")
 
@@ -72,7 +72,8 @@ def train(args, p_encoder, q_encoder, train_dataloader, valid_dataloader, top_k)
 
     epochs = tqdm(range(int(args.num_train_epochs)), desc="Epoch")
 
-    for _ in epochs:
+    for epoch in epochs:
+        print(f"epoch : {epoch + 1}")
         with tqdm(train_dataloader, unit="batch") as tepoch:
             for idx, batch in enumerate(tepoch):
                 p_encoder.train()
@@ -114,7 +115,7 @@ def train(args, p_encoder, q_encoder, train_dataloader, valid_dataloader, top_k)
                     sim_scores = F.log_softmax(sim_scores, dim=1)
 
                     loss = F.nll_loss(sim_scores, targets) / accumulation_step
-                    tepoch.set_postfix(loss=f"{loss.item():.4f}")
+                    tepoch.set_postfix(loss=f"{loss.item()*accumulation_step:.4f}")
 
                 scaler.scale(loss).backward()
 

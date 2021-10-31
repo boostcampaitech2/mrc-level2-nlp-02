@@ -17,6 +17,7 @@ from transformers import (
 )
 from datasets import (
     load_from_disk,
+    Sequence,
     Value,
     Features,
     Dataset,
@@ -32,7 +33,7 @@ from rt_bm25 import SparseRetrieval
 
 def load_encoder(model_name, training_args, data_args, p_encoder, q_encoder):
     # 파일 이름 model_epoch_batch_topk_acs_pp(preprocessing pattern)
-    file_name = f"{model_name.split('/')[-1]}_ep{int(training_args.num_train_epochs)}_bs{training_args.per_device_train_batch_size}_topk{data_args.top_k_retrieval}_acs{training_args.gradient_accumulation_steps}_pp{data_args.preprocessing_pattern}"
+    file_name = f"{model_name.split('/')[-1]}_ep{int(training_args.num_train_epochs)}_bs{training_args.per_device_train_batch_size}_topk{data_args.top_k_retrieval}_acs{training_args.gradient_accumulation_steps}_pp{data_args.preprocessing_pattern}_lr{training_args.learning_rate}"
     # test 용
     # file_name = f"ep{training_args.num_train_epochs}_bs{training_args.per_device_train_batch_size}_topk{data_args.top_k_retrieval}_acs{training_args.gradient_accumulation_steps}"
     full_path = os.path.join(training_args.output_dir, file_name)
@@ -63,7 +64,7 @@ def save_and_load_wiki_embedding(model_name, training_args, data_args, p_encoder
     """
     [summary] : 학습시킨 p_encoder를 이용해 wiki text의 embedding vector를 생성하고 csv 파일로 저장합니다.
     """
-    file_name = f"{model_name.split('/')[-1]}_ep{int(training_args.num_train_epochs)}_bs{training_args.per_device_train_batch_size}_topk{data_args.top_k_retrieval}_acs{training_args.gradient_accumulation_steps}_pp{data_args.preprocessing_pattern}.csv"
+    file_name = f"{model_name.split('/')[-1]}_ep{int(training_args.num_train_epochs)}_bs{training_args.per_device_train_batch_size}_topk{data_args.top_k_retrieval}_acs{training_args.gradient_accumulation_steps}_pp{data_args.preprocessing_pattern}_lr{training_args.learning_rate}.csv"
 
     os.makedirs("/opt/ml/data/wiki", exist_ok=True)
 
@@ -182,7 +183,7 @@ def main(model_args, data_args, training_args):
 
     wiki_embedding_df = save_and_load_wiki_embedding(model_args.model_name_or_path, training_args, data_args, p_encoder, wiki_texts, tokenizer)
 
-    datasets = load_from_disk(data_args.dataset_name)
+    datasets = load_from_disk(data_args.dataset_name)['validation']
 
     top_k_df = retrieve(q_encoder, tokenizer, datasets, wiki_texts, wiki_embedding_df, data_args.DRP_top_k)
 
@@ -194,15 +195,37 @@ def main(model_args, data_args, training_args):
                 "question": Value(dtype="string", id=None),
             }
         )
+    elif training_args.do_eval:
+        f = Features(  # Features로 형식화?
+            {
+                "answers": Sequence(
+                    feature={
+                        "text": Value(dtype="string", id=None),
+                        "answer_start": Value(dtype="int32", id=None),
+                    },
+                    length=-1,
+                    id=None,
+                ),
+                "context": Value(dtype="string", id=None),
+                "original_context": Value(dtype="string", id=None),
+                "id": Value(dtype="string", id=None),
+                "question": Value(dtype="string", id=None),
+            }
+        )
+
     datasets = DatasetDict({"validation": Dataset.from_pandas(top_k_df, features=f)})
 
-    path = f"{model_args.model_name.split('/')[-1]}_ep{int(training_args.num_train_epochs)}_bs{training_args.per_device_train_batch_size}_topk{data_args.DRP_top_k}_acs{training_args.gradient_accumulation_steps}_pp{data_args.preprocessing_pattern}"
+    path = f"{model_args.model_name_or_path.split('/')[-1]}_ep{int(training_args.num_train_epochs)}_bs{training_args.per_device_train_batch_size}_topk{data_args.DRP_top_k}_acs{training_args.gradient_accumulation_steps}_pp{data_args.preprocessing_pattern}_lr{training_args.learning_rate}"
     
-    folder_name = os.path.join("opt/ml/data/top_k", path)
+    folder_name = os.path.join("/opt/ml/data/top_k", path)
     os.makedirs(folder_name, exist_ok=True)
 
-    with open(os.path.join(folder_name, "DPR_datasets.pickle"), "wb") as f:
-        pickle.dump(datasets, f)
+    if training_args.do_predict:
+        with open(os.path.join(folder_name, "DPR_datasets_do_predict.pickle"), "wb") as f:
+            pickle.dump(datasets, f)
+    elif training_args.do_eval:
+        with open(os.path.join(folder_name, "DPR_datasets_do_eval.pickle"), "wb") as f:
+            pickle.dump(datasets, f)
 
 if __name__ == "__main__":
     parser = HfArgumentParser(

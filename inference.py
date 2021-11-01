@@ -7,6 +7,7 @@ Open-Domain Question Answering 을 수행하는 inference 코드 입니다.
 
 import logging
 import sys
+import torch
 from typing import Callable, List, Dict, NoReturn, Tuple
 
 import numpy as np
@@ -96,6 +97,8 @@ def main():
 
     # 모델을 초기화하기 전에 난수를 고정합니다.
     set_seed(training_args.seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
     
     #데이터셋을 불러옵니다.
     datasets = load_from_disk(data_args.dataset_name)

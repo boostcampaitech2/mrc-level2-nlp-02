@@ -1,6 +1,7 @@
 import logging
 import os
 import sys
+import torch
 import pandas as pd
 
 from typing import List, Callable, NoReturn, NewType, Any
@@ -50,7 +51,7 @@ def main():
     wandb.init(
         entity="klue-level2-nlp-02",
         project="mrc_project_1",
-        name=log_args.wandb_name,
+        name=log_args.wandb_name + "_train/train" if training_args.do_train==True else "_train/eval",
         group=model_args.model_name_or_path,
     )
     wandb.config.update(training_args)
@@ -75,6 +76,9 @@ def main():
 
     # 모델을 초기화하기 전에 난수를 고정합니다.
     set_seed(training_args.seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
     # 데이터셋을 불러옵니다.
     datasets = load_from_disk(data_args.dataset_name)
     

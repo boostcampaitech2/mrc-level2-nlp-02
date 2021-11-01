@@ -1,9 +1,7 @@
 """
 Open-Domain Question Answering 을 수행하는 inference 코드 입니다.
-
 대부분의 로직은 train.py 와 비슷하나 retrieval, predict 부분이 추가되어 있습니다.
 """
-
 
 import logging
 import sys
@@ -34,11 +32,9 @@ from transformers import (
 from utils_qa import postprocess_qa_predictions, check_no_error
 from trainer_qa import QuestionAnsweringTrainer
 
-from retriever.model_encoder import BertEncoder
-from retriever.retriever_sparse_BM25 import SparseRetrieval
+from retriever import retriever_sparse_BM25
+from retriever import retriever_sparse_ES
 from retriever.retriever_dense import DenseRetrieval
-from retriever.elastic_search_sparse import run_elastic_sparse_retrieval
-from retriever.elastic_search_ensemble import run_elastic_ensemble_retrieval
 
 from arguments import (
     ModelArguments,
@@ -50,7 +46,11 @@ import wandb
 from dotenv import load_dotenv
 import os
 
+from retriever.model_encoder import BertEncoder
+
+
 from preprocessor import Preprocessor
+import pandas as pd
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +63,10 @@ def main():
         (ModelArguments, DataTrainingArguments, TrainingArguments, LoggingArguments)
     )
     model_args, data_args, training_args, log_args = parser.parse_args_into_dataclasses()
-       
+    
+    #trainingarguments
+    training_args.per_device_eval_batch_size = 8
+    
     #wandb
     load_dotenv(dotenv_path=log_args.dotenv_path)
     WANDB_AUTH_KEY = os.getenv("WANDB_AUTH_KEY")
@@ -102,8 +105,24 @@ def main():
     #cache 파일을 정리합니다.
     datasets.cleanup_cache_files()
     
-    #기본 전처리를 진행합니다.
+    if training_args.do_predict==True and data_args.add_special_tokens_query_flag:
+        q_type_data = pd.read_csv("./csv/question_tag_testset.csv",index_col=0)
+        train_data = datasets['validation'].to_pandas()
+        train_data['question'] = train_data['question']+' '+q_type_data['Q_tag']
+        datasets['validation'] = datasets['validation'].from_pandas(train_data)
+        print(datasets['validation']['question'][0])
+        print("======================================= predict Tag complete============================")
+        
     if training_args.do_eval==True and data_args.preprocessing_pattern != None:
+        if data_args.add_special_tokens_query_flag:
+            q_type_data = pd.read_csv("./csv/question_tag_validset.csv",index_col=0)
+            
+            train_data = datasets['validation'].to_pandas()
+            train_data['question']=train_data['question']+' '+q_type_data['Q_tag']
+            datasets['validation'] = datasets['validation'].from_pandas(train_data)
+            print(datasets['validation']['question'][0])
+            print("======================================= Tag complete============================")
+
         datasets = Preprocessor.preprocessing(data = datasets, pt_num=data_args.preprocessing_pattern)
     print(datasets)
     
@@ -128,23 +147,16 @@ def main():
             training_args,
             data_args,
         )
+    elif data_args.eval_retrieval == "elastic_sparse":
+        datasets = retriever_sparse_ES.run_elastic_sparse_retrieval(
+            datasets,
+            training_args,
+            data_args,
+        )
     elif data_args.eval_retrieval == "dense":
         datasets = run_dense_retrieval(
             "klue/bert-base", datasets, training_args, data_args
         )
-    elif data_args.eval_retrieval == "elastic_sparse":
-        datasets = run_elastic_sparse_retrieval(
-            datasets,
-            training_args,
-            data_args,
-        )
-    elif data_args.eval_retrieval == "elastic_ensemble":
-        datasets = run_elastic_ensemble_retrieval(
-            datasets,
-            training_args,
-            data_args,
-        )
-
 
     # eval or predict mrc model
     if training_args.do_eval or training_args.do_predict:
@@ -221,7 +233,7 @@ def run_sparse_retrieval(
 
     # Query에 맞는 Passage들을 Retrieval 합니다.
     # retriever 설정
-    retriever = SparseRetrieval(
+    retriever = retriever_sparse_BM25.SparseRetrieval(
         tokenize_fn=tokenize_fn, data_path=data_path, context_path=context_path,
         pt_num=data_args.preprocessing_pattern
     )

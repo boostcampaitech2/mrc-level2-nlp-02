@@ -57,7 +57,7 @@ class SparseRetrieval:
 
         self.data_path = data_path
         self.pt_num = pt_num
-        with open(os.path.join(data_path,context_path) , "r", encoding="utf-8") as f:
+        with open(os.path.join(data_path,context_path), "r", encoding="utf-8") as f:
             wiki = json.load(f)
         
         self.contexts = list(
@@ -158,7 +158,7 @@ class SparseRetrieval:
             # Retrieve한 Passage를 pd.DataFrame으로 반환합니다.
             total = []
             with timer("query exhaustive search"):
-                doc_scores, doc_indices = self.get_relevant_doc_bulk_BM25(query_or_dataset['question'], k=topk, score_ratio=score_ratio)
+                doc_scores, doc_indices = self.get_relevant_doc_bulk_BM25(query_or_dataset, k=topk, score_ratio=score_ratio)
             for idx, example in enumerate(
                 tqdm(query_or_dataset, desc="BM25 retrieval: ")
             ):
@@ -204,8 +204,8 @@ class SparseRetrieval:
         return doc_scores[doc_indices[:k]], doc_indices[:k]
 
     def get_relevant_doc_bulk_BM25(
-        self, queries: List, k: Optional[int] = 1, score_ratio: Optional[float] = None
-    ) -> Tuple[List, List]:
+        self, query_or_dataset: Union[str, Dataset], k: Optional[int] = 1, score_ratio: Optional[float] = 0
+        ) -> Tuple[List, List]:
 
         """
         Arguments:
@@ -217,7 +217,31 @@ class SparseRetrieval:
             vocab 에 없는 이상한 단어로 query 하는 경우 assertion 발생 (예) 뙣뙇?
         """
         print("Build BM25 score, indices")
-        tokenized_queries= [self.tokenizer(i) for i in queries]        
+        stopword = []
+        with open('StopwordInQuestion', "r", encoding="utf-8") as f:
+            for _, line in enumerate(f) :
+                if line.startswith('#') :
+                    continue
+                stopword.append(eval(line.split(',')[0]))
+        new_queries = query_or_dataset['question']
+        new_queries  = []
+        for q in query_or_dataset['question'] :
+
+            q_token = q.split(' ')
+            if '[' in q_token[-1]:
+                q = ' '.join(q_token[:-1])
+            
+            rem_QM = ''
+            if q[-1] == '?' :
+                rem_QM = q[:-1]
+
+            rem_QM_token = rem_QM.split(' ')
+            if rem_QM_token[-1] in stopword :
+                new_queries.append(' '.join(rem_QM_token[:-1]))
+            else :
+                new_queries.append(rem_QM)
+
+        tokenized_queries= [self.tokenizer(i) for i in new_queries]        
         doc_scores = []
         doc_indices = []
         for i in tqdm(tokenized_queries):
@@ -240,5 +264,15 @@ class SparseRetrieval:
             else:
                 doc_scores.append(sorted_score[:k])
                 doc_indices.append(sorted_id[:k])
-
+        
+        if 'answers' in  query_or_dataset.column_names :
+            print(f'** Calculating Recall@{k}')
+            cnt = 0
+            for i, q in enumerate(query_or_dataset['context']) :
+                for wiki_idx in list(doc_indices[i]) :
+                    if q == self.contexts[wiki_idx]:
+                        cnt += 1
+                        break
+            total_len = len(query_or_dataset['context'])
+            print(f'** Recall@{k} = {cnt / total_len: .4f}, Count:{cnt}')
         return doc_scores, doc_indices

@@ -122,6 +122,10 @@ class DataTrainingArguments:
         default=False,
         metadata={"help": "add special tokens"},
     )
+    add_special_tokens_query_flag:bool = field(
+        default=False,
+        metadata={"help": "add special tokens about question type"},
+    )
     num_neg: int = field(
         default=0, metadata={"help": "Define how many negative sampling dataset"},
     )

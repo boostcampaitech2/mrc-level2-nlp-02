@@ -9,6 +9,7 @@ import logging
 import sys
 from typing import Callable, ContextManager, List, Dict, NoReturn, Tuple
 from glob import glob
+import torch
 
 import numpy as np
 import torch
@@ -98,8 +99,10 @@ def main():
 
     # 모델을 초기화하기 전에 난수를 고정합니다.
     set_seed(training_args.seed)
-
-    # 데이터셋을 불러옵니다.
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    
+    #데이터셋을 불러옵니다.
     datasets = load_from_disk(data_args.dataset_name)
 
     # cache 파일을 정리합니다.

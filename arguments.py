@@ -14,6 +14,12 @@ class ModelArguments:
             "help": "Path to pretrained model or model identifier from huggingface.co/models"
         },
     )
+    rt_model_name: str = field(
+        default="klue/bert-base",
+        metadata={
+            "help": "Path to pretrained model or model identifier from huggingface.co/models"
+        },
+    )
     config_name: Optional[str] = field(
         default="klue/roberta-large",
         metadata={
@@ -128,6 +134,17 @@ class DataTrainingArguments:
     reconfig: bool = field(
         default=False,
         metadata={"help": "Elastic search re-config flag"},
+    )
+    reconfig: bool = field(
+        default=False,
+        metadata={"help": "Elastic search re-config flag"},
+    )
+    re_rank: bool = field(
+        default=False,
+        metadata={"help": "re-rank top-k passage"},
+    )
+    re_rank_top_k : int = field(
+        default=0, metadata={"help": "Define how many re-rank passage"},
     )
 
 @dataclass

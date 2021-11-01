@@ -7,9 +7,11 @@ Open-Domain Question Answering 을 수행하는 inference 코드 입니다.
 
 import logging
 import sys
-from typing import Callable, List, Dict, NoReturn, Tuple
+from typing import Callable, ContextManager, List, Dict, NoReturn, Tuple
+from glob import glob
 
 import numpy as np
+import torch
 
 from datasets import (
     load_metric,
@@ -48,7 +50,7 @@ import wandb
 from dotenv import load_dotenv
 import os
 
-from retriever.model_encoder import BertEncoder
+from retriever.rt_model import BertEncoder
 
 
 from preprocessor import Preprocessor
@@ -141,10 +143,95 @@ def main():
         datasets = run_dense_retrieval(
             "klue/bert-base", datasets, training_args, data_args
         )
+    
+    if data_args.re_rank == True:
+        rt_tokenizer = AutoTokenizer.from_pretrained(model_args.rt_model_name)
+        p_encoder = BertEncoder.from_pretrained(model_args.rt_model_name)
+        q_encoder = BertEncoder.from_pretrained(model_args.rt_model_name)
+        p_encoder, q_encoder = load_rerank_model(p_encoder, q_encoder)
+
+
+        datasets['validation']['context'] = re_rank_use_model(datasets, rt_tokenizer, p_encoder, q_encoder, data_args.re_rank_top_k)
+        pass
 
     # eval or predict mrc model
     if training_args.do_eval or training_args.do_predict:
         run_mrc(data_args, training_args, model_args, datasets, tokenizer, model)
+
+def re_rank_use_model(datasets:DatasetDict, tokenizer, p_encoder, q_encoder, re_rank_top_k = 10):
+    queries = datasets['validation']['question']
+    contexts = datasets['validation']['context']
+
+    print(f"query의 개수 : {len(queries)}")
+    print(f"top_k_passage 개수 : {len(contexts)}")
+
+    top_k_passage = []
+    for passages in enumerate(contexts):
+        p_list = passages.split("▦")
+        top_k_passage.append(p_list)
+    print(f"query 당 passage 개수 : {len(top_k_passage[0])}")
+
+    rerank_passage = []
+
+    p_encoder.to('cuda')
+    q_encoder.to('cuda')
+
+    for idx in range(len(queries)):
+        q_seqs = tokenizer(
+            queries[idx],
+            padding="max_length",
+            truncation=True,
+            return_tensors="pt",
+            return_token_type_ids=True,
+        ).to('cuda')  # (1, 512)
+
+        p_seqs = tokenizer(
+                top_k_passage[idx],
+                padding="max_length",
+                truncation=True,
+                return_tensors="pt",
+                return_token_type_ids=True,
+        ).to('cuda')  # (top_k, 512)      
+
+        with torch.no_grad():
+            q_encoder.eval()
+            p_encoder.eval()
+
+            q_outputs = q_encoder(**q_seqs).to('cpu')
+            p_outputs = p_encoder(**p_seqs).to('cpu')
+
+            sim_score = torch.matmul(q_outputs, p_outputs.transpose(0,1)) # (1, top_k)
+            indices = torch.argsort(sim_score, dim=1, descending=True)[:re_rank_top_k]
+        temp = []
+        for i in indices:
+            temp.append(top_k_passage[idx][i])
+        rerank_passage.append(" ".join(temp))
+
+    print(f"re-rank passage 개수 :{len(rerank_passage)}")
+
+    return rerank_passage
+
+def load_rerank_model(p_encoder, q_encoder):
+    file_list = glob('/opt/ml/mrc-level2-nlp-02/retriever/encoders/*')
+
+    for idx, file_name in enumerate(file_list):
+        print(f"{idx} : {file_name.split('/')[-1]}")
+    
+    select_num = int(input("모델을 선택하세요 : "))
+
+    full_path = file_list[select_num]
+    p_encoder_path = os.path.join(full_path, "passage.pt")
+    q_encoder_path = os.path.join(full_path, "query.pt")
+
+    assert os.path.isfile(p_encoder_path) or os.path.isfile(q_encoder_path), "rt_train을 실행해서 model parameter를 저장해야 합니다."
+
+    p_encoder.load_state_dict(torch.load(p_encoder_path))
+    q_encoder.load_state_dict(torch.load(q_encoder_path))
+
+    print("finish load model state dict !!!")
+
+    return p_encoder, q_encoder
+
 
 def run_dense_retrieval(
     model_checkpoint: str,

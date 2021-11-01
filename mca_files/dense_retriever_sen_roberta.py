@@ -216,6 +216,7 @@ class DenseRetrieval:
 
     train_iterator = tqdm(range(int(args.num_train_epochs)), desc='Epoch')
 
+    min_loss = 9999999
     for _ in train_iterator:
       valid_check_period = 100
       count_iteration = 0
@@ -362,7 +363,13 @@ class DenseRetrieval:
                   valid_loss += loss
               
               print('valid_loss: ', valid_loss)
+              print('min_loss: ', min_loss)
               print('accuracy: ', valid_correct/valid_total)
+              if valid_loss < min_loss:
+                print('New min loss, so saving the model.')
+                retriever.p_encoder.save_pretrained('encoders/p_encoder_neg_sen')
+                retriever.q_encoder.save_pretrained('encoders/q_encoder_neg_sen')
+                min_loss = valid_loss
 
 
 
@@ -436,9 +443,10 @@ args = TrainingArguments(
   # learning_rate=3e-4,
   # learning_rate=5e-5,
   learning_rate=5e-6,
-  per_device_train_batch_size=4,
-  per_device_eval_batch_size=4,
-  num_train_epochs=2,
+  # learning_rate=1e-7,
+  per_device_train_batch_size=2,
+  per_device_eval_batch_size=2,
+  num_train_epochs=30,
   weight_decay=0.01
 )
 
@@ -460,7 +468,7 @@ retriever = DenseRetrieval(
   train_dataset=train_dataset,
   valid_dataset=valid_dataset,
   # num_neg=12,
-  num_neg=5,
+  num_neg=15,
   tokenizer=tokenizer,
   p_encoder=p_encoder,
   q_encoder=q_encoder
@@ -468,5 +476,5 @@ retriever = DenseRetrieval(
 
 retriever.train()
 
-retriever.p_encoder.save_pretrained('encoders/p_encoder_neg_sen1')
-retriever.q_encoder.save_pretrained('encoders/q_encoder_neg_sen1')
+# retriever.p_encoder.save_pretrained('encoders/p_encoder_neg_sen')
+# retriever.q_encoder.save_pretrained('encoders/q_encoder_neg_sen')

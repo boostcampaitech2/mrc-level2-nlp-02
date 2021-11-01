@@ -1,3 +1,6 @@
+import sys
+sys.path.append("/opt/ml/code/")
+
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -26,6 +29,8 @@ from transformers import (
 import transformers
 from elasticsearch import Elasticsearch
 es = Elasticsearch([{'host': 'localhost', 'port': 9200}])
+
+import model_encoder
 
 dataset = load_from_disk('../data/train_dataset')['validation']
 
@@ -208,6 +213,7 @@ class DenseRetrieval:
 
     train_iterator = tqdm(range(int(args.num_train_epochs)), desc='Epoch')
 
+    min_loss = 9999999
     for _ in train_iterator:
       valid_check_period = 100
       count_iteration = 0
@@ -256,7 +262,7 @@ class DenseRetrieval:
           # print(p_outputs.shape, q_outputs.shape)
 
           sim_scores = torch.bmm(q_outputs, p_outputs).squeeze()
-          # breakpoint()
+          breakpoint()
           sim_scores = sim_scores.view(batch_size, -1)
           sim_scores = F.log_softmax(sim_scores, dim=1)
 
@@ -354,7 +360,15 @@ class DenseRetrieval:
                   valid_loss += loss
               
               print('valid_loss: ', valid_loss)
+              print('min_loss: ', min_loss)
               print('accuracy: ', valid_correct/valid_total)
+              if valid_loss < min_loss:
+                print('New min loss, so saving the model.')
+                # retriever.p_encoder.save_pretrained('encoders/p_encoder_neg')
+                # retriever.q_encoder.save_pretrained('encoders/q_encoder_neg')
+                self.p_encoder.save_pretrained('encoders/p_encoder_neg_2')
+                self.q_encoder.save_pretrained('encoders/q_encoder_neg_2')
+                min_loss = valid_loss
 
 
 
@@ -424,12 +438,12 @@ valid_dataset = load_from_disk('../data/train_dataset')['validation']
 args = TrainingArguments(
   output_dir = 'dense_retrieval',
   evaluation_strategy = 'epoch',
-  # learning_rate=1e-5,
+  learning_rate=1e-5,
   # learning_rate=3e-4,
-  learning_rate=5e-5,
-  per_device_train_batch_size=4,
-  per_device_eval_batch_size=4,
-  num_train_epochs=1,
+  # learning_rate=1e-6,
+  per_device_train_batch_size=2,
+  per_device_eval_batch_size=2,
+  num_train_epochs=30,
   weight_decay=0.01
 )
 
@@ -438,15 +452,18 @@ model_checkpoint = 'klue/bert-base'
 tokenizer = AutoTokenizer.from_pretrained(model_checkpoint)
 
 
-p_encoder = BertEncoder.from_pretrained(model_checkpoint).to(args.device)
-q_encoder = BertEncoder.from_pretrained(model_checkpoint).to(args.device)
+# p_encoder = BertEncoder.from_pretrained(model_checkpoint).to(args.device)
+# q_encoder = BertEncoder.from_pretrained(model_checkpoint).to(args.device)
+
+p_encoder = BertEncoder.from_pretrained('encoders/p_encoder_neg').to(args.device)
+q_encoder = BertEncoder.from_pretrained('encoders/q_encoder_neg').to(args.device)
 
 retriever = DenseRetrieval(
   args=args,
   train_dataset=train_dataset,
   valid_dataset=valid_dataset,
   # num_neg=12,
-  num_neg=5,
+  num_neg=15,
   tokenizer=tokenizer,
   p_encoder=p_encoder,
   q_encoder=q_encoder
@@ -454,5 +471,5 @@ retriever = DenseRetrieval(
 
 retriever.train()
 
-retriever.p_encoder.save_pretrained('encoders/p_encoder_neg')
-retriever.q_encoder.save_pretrained('encoders/q_encoder_neg')
+# retriever.p_encoder.save_pretrained('encoders/p_encoder_neg')
+# retriever.q_encoder.save_pretrained('encoders/q_encoder_neg')

@@ -13,6 +13,7 @@ import torch
 
 import numpy as np
 import torch
+from tqdm.auto import tqdm
 
 from datasets import (
     load_metric,
@@ -76,7 +77,7 @@ def main():
     
     wandb.init(
         entity="klue-level2-nlp-02",
-        project=log_args.project_name,
+        project="mrc_project_Rerank",
         name=log_args.wandb_name + "_eval" if training_args.do_eval==True else "_inference",
         group=model_args.model_name_or_path,
     )
@@ -154,22 +155,24 @@ def main():
         p_encoder, q_encoder = load_rerank_model(p_encoder, q_encoder)
 
 
-        datasets['validation']['context'] = re_rank_use_model(datasets, rt_tokenizer, p_encoder, q_encoder, data_args.re_rank_top_k)
-        pass
+        datasets = re_rank_use_model(training_args, datasets, rt_tokenizer, p_encoder, q_encoder, data_args.re_rank_top_k)
 
     # eval or predict mrc model
     if training_args.do_eval or training_args.do_predict:
         run_mrc(data_args, training_args, model_args, datasets, tokenizer, model)
 
-def re_rank_use_model(datasets:DatasetDict, tokenizer, p_encoder, q_encoder, re_rank_top_k = 10):
-    queries = datasets['validation']['question']
-    contexts = datasets['validation']['context']
+def re_rank_use_model(training_args, datasets:DatasetDict, tokenizer, p_encoder, q_encoder, re_rank_top_k = 10):
+    df = datasets['validation'].to_pandas()
+    
+    queries = df['question'].tolist()
+    contexts = df['context'].tolist()
 
     print(f"query의 개수 : {len(queries)}")
     print(f"top_k_passage 개수 : {len(contexts)}")
 
     top_k_passage = []
-    for passages in enumerate(contexts):
+
+    for passages in contexts:
         p_list = passages.split("▦")
         top_k_passage.append(p_list)
     print(f"query 당 passage 개수 : {len(top_k_passage[0])}")
@@ -179,7 +182,7 @@ def re_rank_use_model(datasets:DatasetDict, tokenizer, p_encoder, q_encoder, re_
     p_encoder.to('cuda')
     q_encoder.to('cuda')
 
-    for idx in range(len(queries)):
+    for idx in tqdm(range(len(queries))):
         q_seqs = tokenizer(
             queries[idx],
             padding="max_length",
@@ -189,11 +192,11 @@ def re_rank_use_model(datasets:DatasetDict, tokenizer, p_encoder, q_encoder, re_
         ).to('cuda')  # (1, 512)
 
         p_seqs = tokenizer(
-                top_k_passage[idx],
-                padding="max_length",
-                truncation=True,
-                return_tensors="pt",
-                return_token_type_ids=True,
+            top_k_passage[idx],
+            padding="max_length",
+            truncation=True,
+            return_tensors="pt",
+            return_token_type_ids=True,
         ).to('cuda')  # (top_k, 512)      
 
         with torch.no_grad():
@@ -204,15 +207,42 @@ def re_rank_use_model(datasets:DatasetDict, tokenizer, p_encoder, q_encoder, re_
             p_outputs = p_encoder(**p_seqs).to('cpu')
 
             sim_score = torch.matmul(q_outputs, p_outputs.transpose(0,1)) # (1, top_k)
-            indices = torch.argsort(sim_score, dim=1, descending=True)[:re_rank_top_k]
+            indices = torch.argsort(sim_score, dim=1, descending=True).squeeze()[:re_rank_top_k]
         temp = []
         for i in indices:
             temp.append(top_k_passage[idx][i])
         rerank_passage.append(" ".join(temp))
 
     print(f"re-rank passage 개수 :{len(rerank_passage)}")
+    df['context'] = rerank_passage
+    
+    if training_args.do_predict:
+        f = Features(
+            {
+                "context": Value(dtype="string", id=None),
+                "id": Value(dtype="string", id=None),
+                "question": Value(dtype="string", id=None),
+            }
+        )
 
-    return rerank_passage
+    # train data 에 대해선 정답이 존재하므로 id question context answer 로 데이터셋이 구성됩니다.
+    elif training_args.do_eval:
+        f = Features(
+            {
+                "answers": Sequence(
+                    feature={
+                        "text": Value(dtype="string", id=None),
+                        "answer_start": Value(dtype="int32", id=None),
+                    },
+                    length=-1,
+                    id=None,
+                ),
+                "context": Value(dtype="string", id=None),
+                "id": Value(dtype="string", id=None),
+                "question": Value(dtype="string", id=None),
+            }
+        )
+    return DatasetDict({"validation": Dataset.from_pandas(df, features=f)})
 
 def load_rerank_model(p_encoder, q_encoder):
     file_list = glob('/opt/ml/mrc-level2-nlp-02/retriever/encoders/*')

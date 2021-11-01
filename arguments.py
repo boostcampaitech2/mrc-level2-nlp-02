@@ -144,7 +144,7 @@ class DataTrainingArguments:
         metadata={"help": "re-rank top-k passage"},
     )
     re_rank_top_k : int = field(
-        default=0, metadata={"help": "Define how many re-rank passage"},
+        default=10, metadata={"help": "Define how many re-rank passage"},
     )
 
 @dataclass

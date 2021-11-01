@@ -50,7 +50,7 @@ def main():
 
     wandb.init(
         entity="klue-level2-nlp-02",
-        project="mrc_project_1",
+        project="mrc_project_Rerank",
         name=log_args.wandb_name + "_train/train" if training_args.do_train==True else "_train/eval",
         group=model_args.model_name_or_path,
     )

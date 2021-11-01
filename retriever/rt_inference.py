@@ -28,7 +28,7 @@ from rt_arguments import (
     EncoderModelArguments,
     RtDataTrainingArguments,
 )
-from rt_model import klueRobertaEncoder
+from rt_model import klueRobertaEncoder, BertEncoder
 from rt_bm25 import SparseRetrieval
 
 def load_encoder(model_name, training_args, data_args, p_encoder, q_encoder):
@@ -173,9 +173,12 @@ def main(model_args, data_args, training_args):
     tokenizer = AutoTokenizer.from_pretrained(
         model_args.model_name_or_path, use_fast=True
     )
-
-    p_encoder = klueRobertaEncoder(model_args.model_name_or_path)
-    q_encoder = klueRobertaEncoder(model_args.model_name_or_path)
+    if 'roberta' in model_args.model_name_or_path:
+        p_encoder = klueRobertaEncoder(model_args.model_name_or_path)
+        q_encoder = klueRobertaEncoder(model_args.model_name_or_path)
+    elif 'bert' in model_args.model_name_or_path:
+        p_encoder = BertEncoder.from_pretrained(model_args.model_name_or_path)
+        q_encoder = BertEncoder.from_pretrained(model_args.model_name_or_path)
 
     p_encoder, q_encoder = load_encoder(encoder_args.model_name_or_path, training_args, data_args, p_encoder, q_encoder)
 

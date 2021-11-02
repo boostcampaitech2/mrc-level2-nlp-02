@@ -5,6 +5,7 @@ Open-Domain Question Answering 을 수행하는 inference 코드 입니다.
 
 import logging
 import sys
+import torch
 from typing import Callable, List, Dict, NoReturn, Tuple
 
 import numpy as np
@@ -29,10 +30,10 @@ from transformers import (
     set_seed,
 )
 
-from utils_qa_paired import postprocess_qa_predictions, check_no_error
-from trainer_qa_paired import QuestionAnsweringTrainer
+from utils_qa import postprocess_qa_predictions, check_no_error
+from trainer_qa import QuestionAnsweringTrainer
 
-from retriever import retriever_sparse_BM25_paired
+from retriever import retriever_sparse_BM25
 from retriever import retriever_sparse_ES
 from retriever.retriever_dense import DenseRetrieval
 
@@ -98,6 +99,8 @@ def main():
 
     # 모델을 초기화하기 전에 난수를 고정합니다.
     set_seed(training_args.seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
     
     #데이터셋을 불러옵니다.
     datasets = load_from_disk(data_args.dataset_name)
@@ -126,41 +129,70 @@ def main():
         datasets = Preprocessor.preprocessing(data = datasets, pt_num=data_args.preprocessing_pattern)
     print(datasets)
     
+    model_path = model_args.model_name_or_path
+
+    try : 
+        if '0' in os.listdir(model_args.model_name_or_path) and '1' in os.listdir(model_args.model_name_or_path) :
+            model_path = os.path.join(model_args.model_name_or_path, '0')
+    except :
+        model_path = model_args.model_name_or_path
     # AutoConfig를 이용하여 pretrained model 과 tokenizer를 불러옵니다.
     # argument로 원하는 모델 이름을 설정하면 옵션을 바꿀 수 있습니다.
-    config = AutoConfig.from_pretrained(model_args.model_name_or_path)
+    config = AutoConfig.from_pretrained(model_path)
     tokenizer = AutoTokenizer.from_pretrained(
-        model_args.model_name_or_path,
+        model_path,
         use_fast=True,
     )
     
     model = AutoModelForQuestionAnswering.from_pretrained(
-        model_args.model_name_or_path,
+        model_path,
         from_tf=bool(".ckpt" in model_args.model_name_or_path),
         config=config,
     )
+    try :
+        if '0' in os.listdir(model_args.model_name_or_path) and '1' in os.listdir(model_args.model_name_or_path) :
+            model_path_list = os.listdir(model_args.model_name_or_path)
+            sub_path = os.path.join(model_args.model_name_or_path, model_path_list[0])
+            model = AutoModelForQuestionAnswering.from_pretrained(
+                sub_path, config=config
+                )
+            model_sd = model.state_dict()
+            for sub_path in model_path_list[1:] :
+                sub_path = os.path.join(model_args.model_name_or_path, sub_path)
+                sub_model = AutoModelForQuestionAnswering.from_pretrained(
+                    sub_path, config=config
+                    )
+                sub_model_sd = sub_model.state_dict()
+                for layer in model_sd :
+                    model_sd[layer] = (model_sd[layer] + sub_model_sd[layer])
+            for key in model_sd :
+                model_sd[key] = model_sd[key] / float(len(model_path_list))
+            model.load_state_dict(model_sd)
+    except :
+        pass
+
     # True일 경우 : run passage retrieval
     if data_args.eval_retrieval == "sparse":
-        new_datasets = run_sparse_retrieval(
+        datasets = run_sparse_retrieval(
             tokenizer.tokenize,
             datasets,
             training_args,
             data_args,
         )
     elif data_args.eval_retrieval == "elastic_sparse":
-        new_datasets = retriever_sparse_ES.run_elastic_sparse_retrieval(
+        datasets = retriever_sparse_ES.run_elastic_sparse_retrieval(
             datasets,
             training_args,
             data_args,
         )
     elif data_args.eval_retrieval == "dense":
-        new_datasets = run_dense_retrieval(
+        datasets = run_dense_retrieval(
             "klue/bert-base", datasets, training_args, data_args
         )
 
     # eval or predict mrc model
     if training_args.do_eval or training_args.do_predict:
-        run_mrc(data_args, training_args, model_args, new_datasets, datasets, tokenizer, model)
+        run_mrc(data_args, training_args, model_args, datasets, tokenizer, model)
 
 def run_dense_retrieval(
     model_checkpoint: str,
@@ -233,7 +265,7 @@ def run_sparse_retrieval(
 
     # Query에 맞는 Passage들을 Retrieval 합니다.
     # retriever 설정
-    retriever = retriever_sparse_BM25_paired.SparseRetrieval(
+    retriever = retriever_sparse_BM25.SparseRetrieval(
         tokenize_fn=tokenize_fn, data_path=data_path, context_path=context_path,
         pt_num=data_args.preprocessing_pattern
     )
@@ -277,14 +309,13 @@ def run_mrc(
     data_args: DataTrainingArguments,
     training_args: TrainingArguments,
     model_args: ModelArguments,
-    new_datasets: DatasetDict,
     datasets: DatasetDict,
     tokenizer,
     model,
 ) -> NoReturn:
 
     # eval 혹은 prediction에서만 사용함
-    column_names = new_datasets["validation"].column_names
+    column_names = datasets["validation"].column_names
 
     question_column_name = "question" if "question" in column_names else column_names[0]
     context_column_name = "context" if "context" in column_names else column_names[1]
@@ -337,8 +368,9 @@ def run_mrc(
                 for k, o in enumerate(tokenized_examples["offset_mapping"][i])
             ]
         return tokenized_examples
-    
-    eval_dataset = new_datasets["validation"]
+
+    eval_dataset = datasets["validation"]
+
     # Validation Feature 생성
     eval_dataset = eval_dataset.map(
         prepare_validation_features,
@@ -370,7 +402,6 @@ def run_mrc(
             max_answer_length=data_args.max_answer_length,
             output_dir=training_args.output_dir,
         )
-        # breakpoint()
         # Metric을 구할 수 있도록 Format을 맞춰줍니다.
         formatted_predictions = [
             {"id": k, "prediction_text": v} for k, v in predictions.items()

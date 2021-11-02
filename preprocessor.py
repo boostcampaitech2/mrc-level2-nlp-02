@@ -4,7 +4,7 @@ import pandas as pd
 
 class Preprocessor :
     pattern_dict={
-                "1" : re.compile("(\\n)+|(\\\\n)+|(\\xa0)|(\\u3000)"),
+                "1" : re.compile("(\\n)+|(\\\\n)+|(\\xa0)|(\\u3000)|( )+"),
                 "2" : re.compile("(\\\\n)+|(\\n)+|[^a-zA-Z0-9가-힣ㄱ-ㅎㅏ-ㅣぁ-ゔァ-ヴー々〆〤一-龥()?!∧≪≫『』\'<>〈〉:「」＜＞<>》《・\"-“”\s\.\‘’%,]"),
                 "3" : re.compile('['+chr(0)+'-'+chr(31)+chr(8191)+'-'+chr(12288)+chr(55204)+'-'+chr(63743)+']')} # e.g \u3000 \u200d \u210e ...
     
@@ -18,14 +18,18 @@ class Preprocessor :
         
         # wiki corpus data
         # elif type(data) == list:
-            # for num in pt_num:
-                # data = list(map(lambda x : self.pattern_dict[num].sub(" ",x),data))
+        #     for num in pt_num:
+        #         data = list(map(lambda x : self.pattern_dict[num].sub(" ",x),data))
         
         elif type(data) == list:
             pd_data = pd.DataFrame({"contexts" : data})
+            #조건별 전처리 적용
             for num in pt_num:
                 preprocessing = lambda x : self.pattern_dict[num].sub(" ", x)
                 pd_data["contexts"] = pd_data.contexts.map(preprocessing)
+            
+            #2칸 이상의 빈칸을 1칸으로 변경
+            pd_data["contexts"] = pd_data.contexts.map(lambda x : re.sub("\s+"," ", x))
             data = pd_data.drop_duplicates("contexts").contexts.to_list()
         return data
 
@@ -53,5 +57,6 @@ class Preprocessor :
     def sen_preprocess(self, context, pt_num) :
         for num in pt_num:
             context = self.pattern_dict[num].sub(" ",context)
+            context = re.sub("\s+"," ",context)
         return context
 

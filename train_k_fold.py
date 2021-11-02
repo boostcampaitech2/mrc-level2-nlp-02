@@ -29,6 +29,8 @@ from arguments import (
 from custom_tokenizer import load_pretrained_tokenizer
 from dotenv import load_dotenv
 from preprocessor import Preprocessor
+from sklearn.model_selection import KFold
+
 import wandb
 
 logger = logging.getLogger(__name__)
@@ -77,18 +79,25 @@ def main():
     set_seed(training_args.seed)
     # 데이터셋을 불러옵니다.
     datasets = load_from_disk(data_args.dataset_name)
-    
+
+    model_path = model_args.model_name_or_path
+
+    try : 
+        if '0' in os.listdir(model_args.model_name_or_path) and '1' in os.listdir(model_args.model_name_or_path) :
+            model_path = os.path.join(model_args.model_name_or_path, '0')
+    except :
+        model_path = model_args.model_name_or_path
     # AutoConfig를 이용하여 pretrained model 과 tokenizer를 불러옵니다.
     # argument로 원하는 모델 이름을 설정하면 옵션을 바꿀 수 있습니다.
     config = AutoConfig.from_pretrained(
-        model_args.model_name_or_path)
+        model_path)
     print(config)
     #     # 'use_fast' argument를 True로 설정할 경우 rust로 구현된 tokenizer를 사용할 수 있습니다.
     #     # False로 설정할 경우 python으로 구현된 tokenizer를 사용할 수 있으며,
     #     # rust version이 비교적 속도가 빠릅니다.
     
     tokenizer = load_pretrained_tokenizer(
-            pretrained_model_name_or_path = model_args.model_name_or_path,
+            pretrained_model_name_or_path = model_path,
             tokenizer_name = model_args.tokenizer_name,
             custom_flag = model_args.customized_tokenizer_flag,
             data_selected = data_args.data_selected,
@@ -139,11 +148,33 @@ def main():
     print(datasets)
 
     model = AutoModelForQuestionAnswering.from_pretrained(
-        model_args.model_name_or_path,
-        from_tf=bool(".ckpt" in model_args.model_name_or_path), # Load the model weights from a TensorFlow checkpoint save file
+        model_path,
+        from_tf=bool(".ckpt" in model_path), # Load the model weights from a TensorFlow checkpoint save file
         config=config,
     )
+    try :
+        if '0' in os.listdir(model_args.model_name_or_path) and '1' in os.listdir(model_args.model_name_or_path) :
+            model_path_list = os.listdir(model_args.model_name_or_path)
+            sub_path = os.path.join(model_args.model_name_or_path, model_path_list[0])
+            model = AutoModelForQuestionAnswering.from_pretrained(
+                sub_path, config=config
+                )
+            model_sd = model.state_dict()
+            for sub_path in model_path_list[1:] :
+                sub_path = os.path.join(model_args.model_name_or_path, sub_path)
+                sub_model = AutoModelForQuestionAnswering.from_pretrained(
+                    sub_path, config=config
+                    )
+                sub_model_sd = sub_model.state_dict()
+                for layer in model_sd :
+                    model_sd[layer] = (model_sd[layer] + sub_model_sd[layer])
+            for key in model_sd :
+                model_sd[key] = model_sd[key] / float(len(model_path_list))
+            model.load_state_dict(model_sd)
+    except :
+        pass
 
+    # breakpoint()
     # model resize
     model.resize_token_embeddings(len(tokenizer))
     assert model.vocab_size == len(tokenizer), "embedding size and vocab size is not equal"
@@ -151,23 +182,35 @@ def main():
 
     #cache 파일을 정리합니다.
     datasets.cleanup_cache_files()
-        
+
     # #기본 전처리를 진행합니다.
     print("\n","전처리 전: \n",datasets['train']['context'][0])
     if data_args.preprocessing_pattern != None:
         datasets = Preprocessor.preprocessing(data = datasets, pt_num = data_args.preprocessing_pattern)
         print("\n","전처리 후: \n",datasets['train']['context'][0])
-
-    print(
-        type(training_args),
-        type(model_args),
-        type(datasets),
-        type(tokenizer),
-        type(model),
-    )
-
-    # do_train mrc model 혹은 do_eval mrc model
-    if training_args.do_train or training_args.do_eval:
+    
+    output_dir = training_args.output_dir
+    if training_args.do_train :
+        cv = KFold(n_splits=model_args.k_fold, random_state=training_args.seed,shuffle=True)
+        for i, (t, v) in enumerate(cv.split(datasets['train'])) :
+            kf_datasets = DatasetDict()
+            kf_datasets['train'] = datasets['train'].select(t.tolist())
+            kf_datasets['validation'] = datasets['validation']
+            
+            training_args.output_dir = os.path.join(output_dir, str(i))
+            print(training_args.output_dir)
+                        
+            print(
+                type(training_args),
+                type(model_args),
+                type(datasets),
+                type(tokenizer),
+                type(model),
+            )
+            
+            run_mrc(data_args, training_args, model_args, kf_datasets, tokenizer, model)
+            
+    if training_args.do_eval:
         run_mrc(data_args, training_args, model_args, datasets, tokenizer, model)
 
 
@@ -178,7 +221,7 @@ def run_mrc(
     datasets: DatasetDict,
     tokenizer,
     model,
-) -> NoReturn:
+    ) -> NoReturn:
 
     # dataset을 전처리합니다.
     # training과 evaluation에서 사용되는 전처리는 아주 조금 다른 형태를 가집니다.
@@ -438,7 +481,7 @@ def run_mrc(
         metrics = trainer.evaluate()
 
         metrics["eval_samples"] = len(eval_dataset)
-
+        trainer.save_state()
         trainer.log_metrics("eval", metrics)
         trainer.save_metrics("eval", metrics)
 

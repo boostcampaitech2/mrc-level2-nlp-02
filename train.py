@@ -18,6 +18,7 @@ from transformers import (
     TrainingArguments,
     set_seed,
 )
+from retrieval import SparseRetrieval
 
 from utils_qa import postprocess_qa_predictions, check_no_error
 from trainer_qa import QuestionAnsweringTrainer
@@ -31,7 +32,7 @@ from arguments import (
 from custom_tokenizer import load_pretrained_tokenizer
 
 from dotenv import load_dotenv
-from preprocessor import Preprocessor, PreprocessorTokenizer
+from preprocessor import Preprocessor
 from augmentation import SpanAugmentation
 import wandb
 
@@ -147,10 +148,25 @@ def main():
     # #기본 전처리를 진행합니다.
     print("\n","전처리 전: \n",datasets['train']['context'][0])
     datasets = Preprocessor.preprocessing(data = datasets, 
-                                          pt_num = data_args.preprocessing_pattern, 
-                                          chn_flag=data_args.add_special_tokens_flag)
+                                          pt_num = data_args.preprocessing_pattern)
     print("\n","전처리 후: \n",datasets['train']['context'][0])
     
+    if data_args.train_retrieval == True :
+        print('Retrieve Using Train Data')
+        retriever = SparseRetrieval(tokenize_fn = tokenizer.tokenize,
+            data_path = '/opt/ml/data',
+            context_path = 'wikipedia_documents.json',
+            pt_num=data_args.preprocessing_pattern,
+            split_special_token_flag=data_args.add_special_tokens_flag
+        )
+
+        retriever.get_sparse_BM25()
+
+        train_data = datasets['train']
+        train_data = retriever.retrieve_train_BM25(dataset=train_data, topk=2)
+        datasets['train'] = train_data
+        print("\n","Retrieved 이후 : \n", datasets['train']['context'][0])
+
     print(
         type(training_args),
         type(model_args),

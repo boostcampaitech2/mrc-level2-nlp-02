@@ -13,14 +13,16 @@ from contextlib import contextmanager
 from typing import List, Tuple, NoReturn, Any, Optional, Union
 
 from sklearn.feature_extraction.text import TfidfVectorizer
-import re
 
-from preprocessor import Preprocessor, PreprocessorTokenizer
-from transformers import BertTokenizerFast
+from preprocessor import Preprocessor
 
 from datasets import (
-    Dataset,
     load_from_disk,
+    Sequence,
+    Value,
+    Features,
+    Dataset,
+    DatasetDict,
     concatenate_datasets,
 )
 
@@ -38,7 +40,7 @@ class SparseRetrieval:
         data_path: Optional[str] = '../data',
         context_path: Optional[str] = "wikipedia_documents.json",
         pt_num: Optional[str] = None,
-        chn_flag : Optional[bool] = False,
+        split_special_token_flag : Optional[bool] = False
     ) -> NoReturn:
 
         """
@@ -71,10 +73,10 @@ class SparseRetrieval:
             dict.fromkeys([v["text"] for v in wiki.values()])
         )  # set 은 매번 순서가 바뀌므로
 
-        self.chn_flag = chn_flag
+        self.split_special_token_flag = split_special_token_flag
         if self.pt_num != None:
             print('Preprocessing Data')
-            self.contexts = Preprocessor.preprocessing(data = self.contexts, pt_num=self.pt_num, chn_flag=self.chn_flag)
+            self.contexts = Preprocessor.preprocessing(data = self.contexts, pt_num=self.pt_num)
         print(f"Lengths of unique contexts : {len(self.contexts)}")
 
         #corpus wiki 데이터를 전처리 합니다.
@@ -105,11 +107,8 @@ class SparseRetrieval:
         """
 
         # Pickle을 저장 "0123"
-        pt_num_sorted = "".join(sorted(self.pt_num)) if self.pt_num != None else ""
-        if self.chn_flag == True :
-            pickle_name = f"BM25_embedding_{pt_num_sorted}_chn.bin"
-        else :
-            pickle_name = f"BM25_embedding_{pt_num_sorted}.bin"
+        pt_num_sorted = "".join(sorted(self.pt_num)) if self.pt_num != None else "None"
+        pickle_name = f"BM25_embedding_{pt_num_sorted}.bin"
         bm_emd_path = os.path.join(self.data_path, pickle_name)
 
         # BM25 존재하면 가져오기
@@ -166,8 +165,98 @@ class SparseRetrieval:
             faiss.write_index(self.indexer, indexer_path)
             print("Faiss Indexer Saved.")
 
+
+    def retrieve_train_BM25(
+        self, dataset: Union[str, Dataset], topk: Optional[int] = 1,
+    ) -> Union[Tuple[List, List], pd.DataFrame]:
+        assert self.BM25 is not None and isinstance(dataset, Dataset)
+
+        total = []
+        
+        with timer("query exhaustive search"):
+            doc_scores, doc_indices = self.get_relevant_train_bulk_BM25(dataset, k=topk, )
+        for idx, example in enumerate(
+            tqdm(dataset, desc="BM25 retrieval: ")
+        ):
+
+            context = " [SPLIT] ".join([self.contexts[pid] for pid in doc_indices[idx]]) if self.split_special_token_flag \
+                else " ".join([self.contexts[pid] for pid in doc_indices[idx]])
+
+            tmp = {
+                # Query와 해당 id를 반환합니다.
+                "question": example["question"],
+                "id": example["id"],
+                # Retrieve한 Passage의 id, context를 반환합니다.
+                "context_id": doc_indices[idx],
+                "context": context,
+            }
+            if "context" in example.keys() and "answers" in example.keys():
+                # validation 데이터를 사용하면 ground_truth context와 answer도 반환합니다.
+                tmp["original_context"] = example["context"]
+                tmp["answers"] = example["answers"]
+            total.append(tmp)
+
+        cqas = pd.DataFrame(total)
+        f = Features(
+            {
+                "answers": Sequence(
+                    feature={
+                        "text": Value(dtype="string", id=None),
+                        "answer_start": Value(dtype="int32", id=None),
+                    },
+                    length=-1,
+                    id=None,
+                ),
+                "context": Value(dtype="string", id=None),
+                "id": Value(dtype="string", id=None),
+                "question": Value(dtype="string", id=None),
+            }
+        )
+        datasets = Dataset.from_pandas(cqas, features=f)
+        return datasets
+        
+    def get_relevant_train_bulk_BM25(
+        self, datasets: Dataset, k: Optional[int] = 1, 
+    ) -> Tuple[List, List]:
+
+        print("Build BM25 score, indices")
+
+        data_size = len(datasets)
+        queries = datasets['question']
+        contexts = datasets['context']
+
+        tokenized_queries= [self.tokenizer(i) for i in queries]        
+        doc_scores = []
+        doc_indices = []
+        for i in tqdm(range(data_size)):
+            scores = self.BM25.get_scores(tokenized_queries[i])
+            context_txt = contexts[i]
+            sorted_score = np.sort(scores)[::-1]
+            sorted_id = np.argsort(scores)[::-1]
+            
+            org_rank = self.contexts.index(context_txt)
+
+            selected_scores = [0]
+            selected_indices = [org_rank]
+            j = 1
+            size = 1
+            while(size < k) :
+                doc_id = sorted_id[j]
+                doc_score = sorted_score[j]
+
+                if doc_id != org_rank :
+                    selected_scores.append(doc_score)
+                    selected_indices.append(doc_id)
+                    size += 1
+                j += 1
+
+            doc_scores.append(selected_scores)
+            doc_indices.append(selected_indices)
+        return doc_scores, doc_indices
+    
+
     def retrieve_BM25(
-        self, query_or_dataset: Union[str, Dataset], topk: Optional[int] = 1, score_ratio: Optional[float] = None
+        self, query_or_dataset: Union[str, Dataset], topk: Optional[int] = 1, score_ratio: Optional[float] = None,
     ) -> Union[Tuple[List, List], pd.DataFrame]:
 
         """
@@ -211,15 +300,17 @@ class SparseRetrieval:
             for idx, example in enumerate(
                 tqdm(query_or_dataset, desc="BM25 retrieval: ")
             ):
+
+                context = " [SPLIT] ".join([self.contexts[pid] for pid in doc_indices[idx]]) if self.split_special_token_flag \
+                    else " ".join([self.contexts[pid] for pid in doc_indices[idx]])
+
                 tmp = {
                     # Query와 해당 id를 반환합니다.
                     "question": example["question"],
                     "id": example["id"],
                     # Retrieve한 Passage의 id, context를 반환합니다.
                     "context_id": doc_indices[idx],
-                    "context": " ".join(
-                        [self.contexts[pid] for pid in doc_indices[idx]]
-                    ),
+                    "context": context,
                 }
                 if "context" in example.keys() and "answers" in example.keys():
                     # validation 데이터를 사용하면 ground_truth context와 answer도 반환합니다.

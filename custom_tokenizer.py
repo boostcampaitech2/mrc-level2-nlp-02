@@ -4,7 +4,7 @@ from tqdm import tqdm
 import os
 import re
 
-speical_tokens = {'additional_special_tokens': ['[CHN]']}
+speical_tokens = {'additional_special_tokens': ['[SPLIT]']}
 
 def load_pretrained_tokenizer(pretrained_model_name_or_path:str,
                               tokenizer_name:str,

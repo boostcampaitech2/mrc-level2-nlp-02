@@ -95,10 +95,6 @@ def prepare_sparse_config(es, docs_config, index_name, data_args):
         if data_args.preprocessing_pattern != None:
             contexts = Preprocessor.preprocessing(contexts, pt_num=data_args.preprocessing_pattern)
 
-        # df = pd.read_json("/opt/ml/data/wikipedia_documents.json").T
-        # df = df.drop_duplicates(subset=["text"])
-        # df = df.to_dict("records")
-        # breakpoint()
         gen = generator(contexts[: 100 * (len(contexts) // 100)], index_name)
         try:
             helpers.bulk(es, gen, chunk_size=100)

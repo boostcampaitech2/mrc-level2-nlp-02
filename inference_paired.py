@@ -29,10 +29,10 @@ from transformers import (
     set_seed,
 )
 
-from utils_qa import postprocess_qa_predictions, check_no_error
-from trainer_qa import QuestionAnsweringTrainer
+from utils_qa_paired import postprocess_qa_predictions, check_no_error
+from trainer_qa_paired import QuestionAnsweringTrainer
 
-from retriever import retriever_sparse_BM25
+from retriever import retriever_sparse_BM25_paired
 from retriever import retriever_sparse_ES
 from retriever.retriever_dense import DenseRetrieval
 
@@ -141,26 +141,26 @@ def main():
     )
     # True일 경우 : run passage retrieval
     if data_args.eval_retrieval == "sparse":
-        datasets = run_sparse_retrieval(
+        new_datasets = run_sparse_retrieval(
             tokenizer.tokenize,
             datasets,
             training_args,
             data_args,
         )
     elif data_args.eval_retrieval == "elastic_sparse":
-        datasets = retriever_sparse_ES.run_elastic_sparse_retrieval(
+        new_datasets = retriever_sparse_ES.run_elastic_sparse_retrieval(
             datasets,
             training_args,
             data_args,
         )
     elif data_args.eval_retrieval == "dense":
-        datasets = run_dense_retrieval(
+        new_datasets = run_dense_retrieval(
             "klue/bert-base", datasets, training_args, data_args
         )
 
     # eval or predict mrc model
     if training_args.do_eval or training_args.do_predict:
-        run_mrc(data_args, training_args, model_args, datasets, tokenizer, model)
+        run_mrc(data_args, training_args, model_args, new_datasets, datasets, tokenizer, model)
 
 def run_dense_retrieval(
     model_checkpoint: str,
@@ -233,7 +233,7 @@ def run_sparse_retrieval(
 
     # Query에 맞는 Passage들을 Retrieval 합니다.
     # retriever 설정
-    retriever = retriever_sparse_BM25.SparseRetrieval(
+    retriever = retriever_sparse_BM25_paired.SparseRetrieval(
         tokenize_fn=tokenize_fn, data_path=data_path, context_path=context_path,
         pt_num=data_args.preprocessing_pattern
     )
@@ -277,13 +277,14 @@ def run_mrc(
     data_args: DataTrainingArguments,
     training_args: TrainingArguments,
     model_args: ModelArguments,
+    new_datasets: DatasetDict,
     datasets: DatasetDict,
     tokenizer,
     model,
 ) -> NoReturn:
 
     # eval 혹은 prediction에서만 사용함
-    column_names = datasets["validation"].column_names
+    column_names = new_datasets["validation"].column_names
 
     question_column_name = "question" if "question" in column_names else column_names[0]
     context_column_name = "context" if "context" in column_names else column_names[1]
@@ -336,9 +337,8 @@ def run_mrc(
                 for k, o in enumerate(tokenized_examples["offset_mapping"][i])
             ]
         return tokenized_examples
-
-    eval_dataset = datasets["validation"]
-
+    
+    eval_dataset = new_datasets["validation"]
     # Validation Feature 생성
     eval_dataset = eval_dataset.map(
         prepare_validation_features,
@@ -370,6 +370,7 @@ def run_mrc(
             max_answer_length=data_args.max_answer_length,
             output_dir=training_args.output_dir,
         )
+        # breakpoint()
         # Metric을 구할 수 있도록 Format을 맞춰줍니다.
         formatted_predictions = [
             {"id": k, "prediction_text": v} for k, v in predictions.items()

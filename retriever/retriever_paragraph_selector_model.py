@@ -118,10 +118,10 @@ class RnnDocSelector(nn.Module):
         question_hiddens = self.question_rnn(x2_emb, x2_mask) # batch * len2 * him
 
         if self.args.question_merge == 'avg':
-            q_merge_weights = layers.uniform_weights(question_hiddens, x2_mask)
+            q_merge_weights = uniform_weights(question_hiddens, x2_mask)
         elif self.args.question_merge == 'self_attn':
             q_merge_weights = self.self_attn(question_hiddens, x2_mask)
-        question_hidden = layers.weighted_avg(question_hiddens, q_merge_weights)
+        question_hidden = weighted_avg(question_hiddens, q_merge_weights)
         # Predict start and end positions
         scores = torch.max(self.ans_attn(doc_hiddens, question_hidden, x1_mask), 1)[0]#.sigmoid()
         scores = scores + torch.max(self.ans_attn1(doc_hiddens, question_hidden, x1_mask), 1)[0]

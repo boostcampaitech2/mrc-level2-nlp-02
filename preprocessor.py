@@ -23,7 +23,6 @@ class Preprocessor :
             for num in pt_num:
                 preprocessing = lambda x : self.pattern_dict[num].sub(" ", x)
                 pd_data["contexts"] = pd_data.contexts.map(preprocessing)
-
             pd_data["contexts"] = pd_data.contexts.map(lambda x : re.sub('\s+', ' ', x))
             data = pd_data.drop_duplicates("contexts").contexts.to_list()
         return data
@@ -36,12 +35,13 @@ class Preprocessor :
         context_prev = context[:answer_start]
         context_next = context[answer_start + len(answer_text):]
 
-        answer_text = self.sen_preprocess(self, context = answer_text, pt_num=pt_num)
+        answer_text = self.sen_preprocess(self, context=answer_text, pt_num=pt_num)
         context_prev = self.sen_preprocess(self, context=context_prev, pt_num=pt_num)
         context_next = self.sen_preprocess(self, context=context_next, pt_num=pt_num)
 
         answer_pos = len(context_prev)
         context = context_prev + answer_text + context_next
+        context = re.sub('\s+' , ' ', context) 
         answer = {'answer_start' : [answer_pos], 'text' : [answer_text]}
 
         dataset['context'] = context

@@ -157,7 +157,7 @@ def main():
             data_path = '/opt/ml/data',
             context_path = 'wikipedia_documents.json',
             pt_num=data_args.preprocessing_pattern,
-            split_special_token_flag=data_args.add_special_tokens_flag
+            add_special_tokens_flag=data_args.add_special_tokens_flag
         )
 
         retriever.get_sparse_BM25()

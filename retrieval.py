@@ -40,7 +40,7 @@ class SparseRetrieval:
         data_path: Optional[str] = '../data',
         context_path: Optional[str] = "wikipedia_documents.json",
         pt_num: Optional[str] = None,
-        split_special_token_flag : Optional[bool] = False
+        add_special_tokens_flag : Optional[bool] = False
     ) -> NoReturn:
 
         """
@@ -73,7 +73,7 @@ class SparseRetrieval:
             dict.fromkeys([v["text"] for v in wiki.values()])
         )  # set 은 매번 순서가 바뀌므로
 
-        self.split_special_token_flag = split_special_token_flag
+        self.add_special_tokens_flag = add_special_tokens_flag 
         if self.pt_num != None:
             print('Preprocessing Data')
             self.contexts = Preprocessor.preprocessing(data = self.contexts, pt_num=self.pt_num)
@@ -171,45 +171,56 @@ class SparseRetrieval:
     ) -> Union[Tuple[List, List], pd.DataFrame]:
         assert self.BM25 is not None and isinstance(dataset, Dataset)
 
-        total = []
-        
-        with timer("query exhaustive search"):
-            doc_scores, doc_indices = self.get_relevant_train_bulk_BM25(dataset, k=topk, )
-        for idx, example in enumerate(
-            tqdm(dataset, desc="BM25 retrieval: ")
-        ):
+        sep_flag = 1 if self.add_special_tokens_flag == True else 0
+        json_name = f"train_retrieval_{self.pt_num}_{sep_flag}.json"
+        json_path = os.path.join(self.data_path, json_name)
 
-            context = " [SPLIT] ".join([self.contexts[pid] for pid in doc_indices[idx]]) if self.split_special_token_flag \
-                else " ".join([self.contexts[pid] for pid in doc_indices[idx]])
+        if os.path.isfile(json_path):
+            print("Load Saved Retrieval Json Data.")
+            with open(json_path , "r", encoding="utf-8") as f:
+                json_data = json.load(f)
+            cqas = pd.DataFrame(json_data)
+        else :
+            total = []
+            print('Make Retrieval Pandas Data')
+            with timer("query exhaustive search"):
+                doc_scores, doc_indices = self.get_relevant_train_bulk_BM25(dataset, k=topk, )
+            for idx, example in enumerate(
+                tqdm(dataset, desc="BM25 retrieval: ")
+            ):
+                context = " [SPLIT] ".join([self.contexts[pid] for pid in doc_indices[idx]]) if self.add_special_tokens_flag \
+                    else " ".join([self.contexts[pid] for pid in doc_indices[idx]])
 
-            tmp = {
-                # Query와 해당 id를 반환합니다.
-                "question": example["question"],
-                "id": example["id"],
-                # Retrieve한 Passage의 id, context를 반환합니다.
-                "context_id": doc_indices[idx],
-                "context": context,
-            }
-            if "context" in example.keys() and "answers" in example.keys():
-                # validation 데이터를 사용하면 ground_truth context와 answer도 반환합니다.
-                tmp["original_context"] = example["context"]
-                tmp["answers"] = example["answers"]
-            total.append(tmp)
+                tmp = {
+                    # Query와 해당 id를 반환합니다.
+                    "question": example["question"],
+                    "id": example["id"],
+                    # Retrieve한 Passage의 id, context를 반환합니다.
+                    "context_id": doc_indices[idx],
+                    "context": context,
+                }
+                if "context" in example.keys() and "answers" in example.keys():
+                    # validation 데이터를 사용하면 ground_truth context와 answer도 반환합니다.
+                    tmp["original_context"] = example["context"]
+                    tmp["answers"] = example["answers"]
+                total.append(tmp)
 
-        cqas = pd.DataFrame(total)
+            cqas = pd.DataFrame(total)
+            cqas.to_json(json_path)
+
         f = Features(
             {
                 "answers": Sequence(
-                    feature={
-                        "text": Value(dtype="string", id=None),
-                        "answer_start": Value(dtype="int32", id=None),
-                    },
-                    length=-1,
-                    id=None,
-                ),
-                "context": Value(dtype="string", id=None),
-                "id": Value(dtype="string", id=None),
-                "question": Value(dtype="string", id=None),
+                feature={
+                    "text": Value(dtype="string", id=None),
+                    "answer_start": Value(dtype="int32", id=None),
+                },
+                length=-1,
+                id=None,
+            ),
+            "context": Value(dtype="string", id=None),
+            "id": Value(dtype="string", id=None),
+            "question": Value(dtype="string", id=None),
             }
         )
         datasets = Dataset.from_pandas(cqas, features=f)
@@ -301,7 +312,7 @@ class SparseRetrieval:
                 tqdm(query_or_dataset, desc="BM25 retrieval: ")
             ):
 
-                context = " [SPLIT] ".join([self.contexts[pid] for pid in doc_indices[idx]]) if self.split_special_token_flag \
+                context = " [SPLIT] ".join([self.contexts[pid] for pid in doc_indices[idx]]) if self.add_special_tokens_flag \
                     else " ".join([self.contexts[pid] for pid in doc_indices[idx]])
 
                 tmp = {

@@ -66,7 +66,15 @@ def run_elastic_dense_retrieval(
 
   questions = datasets['validation']['question']
   ids = datasets['validation']['id']
-  answers = datasets['validation']['answers']########EVAL########
+  if training_args.do_eval:
+    answers = datasets['validation']['answers']########EVAL########
+  
+  if training_args.do_train:
+    ids = datasets['train']['id']
+    questions = datasets['train']['question']
+    answers = datasets['train']['answers']
+    contexts = datasets['train']['context']
+
   # breakpoint()
   # q_encoder = BertEncoder.from_pretrained('encoders/q_encoder_neg').to('cuda') ###########
   q_encoder_sen = RobertaEncoder.from_pretrained('encoders/q_encoder_neg_sen').to('cuda') 
@@ -79,22 +87,40 @@ def run_elastic_dense_retrieval(
 
   relevent_contexts = []
 
-  for question in tqdm(questions):
-    relevent_context = search_with_elastic(es, question, data_args, q_encoder, tokenizer)
-    relevent_contexts.append(relevent_context)
+  if training_args.do_train:
+    for question, context in tqdm(zip(questions, contexts)):
+      relevent_context = search_with_elastic(es, question, data_args,training_args, q_encoder, tokenizer, context)
+      relevent_contexts.append(relevent_context)
+  else:
+    for question in tqdm(questions):
+      relevent_context = search_with_elastic(es, question, data_args,training_args, q_encoder, tokenizer)
+      relevent_contexts.append(relevent_context)
 
-  df = pd.DataFrame({'id':ids, 'question':questions, 'context':relevent_contexts, 'answers':answers})########EVAL########
-  # df = pd.DataFrame({'id':ids, 'question':questions, 'context':relevent_contexts}) ###PREDICTION###
-  datasets = DatasetDict({"validation": Dataset.from_pandas(df)})
+  if training_args.do_eval:
+    df = pd.DataFrame({'id':ids, 'question':questions, 'context':relevent_contexts, 'answers':answers})########EVAL########
+  elif training_args.do_predict:
+    df = pd.DataFrame({'id':ids, 'question':questions, 'context':relevent_contexts}) ###PREDICTION###
+  elif training_args.do_train:
+    df = pd.DataFrame({'id':ids, 'question':questions, 'context':relevent_contexts, 'answers':answers})
+
+  if training_args.do_train:
+    datasets = DatasetDict({"train": Dataset.from_pandas(df), 'validation':[]})
+  else:
+    datasets = DatasetDict({"validation": Dataset.from_pandas(df)})
+  breakpoint()
 
   return datasets
+
+
 
 def search_with_elastic(
   es: Elasticsearch, 
   question: str, 
   data_args: DataTrainingArguments,
+  training_args: TrainingArguments,
   q_encoder: Optional[AutoModel] = None,
   tokenizer: Optional[AutoTokenizer] = None,
+  context: Optional[str] = None,
   )->str:
 
   
@@ -265,6 +291,8 @@ def search_with_elastic(
     res = es.search(index='wiki_documents', body=query, size=data_args.top_k_retrieval)
   
   relevent_contexts = ''
+  if training_args.do_train:
+    relevent_contexts = context
   max_score = res['hits']['hits'][0]['_score']
   
   for i in range(data_args.top_k_retrieval):

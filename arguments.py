@@ -93,3 +93,6 @@ class DataTrainingArguments:
     use_entity_enrichment: bool = field(
         default=False, metadata={"help": "Whether to use entitiy enrichment"}
     )
+    use_longer_context: bool = field(
+        default=False, metadata={"help": "Whther to use longer context for training"}
+    )

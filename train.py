@@ -30,6 +30,8 @@ from arguments import (
 
 import utils
 
+import elastic_search
+
 
 logger = logging.getLogger(__name__)
 
@@ -65,9 +67,13 @@ def main():
     # 모델을 초기화하기 전에 난수를 고정합니다.
     set_seed(training_args.seed)
 
+        
     datasets = load_from_disk(data_args.dataset_name)
+    if data_args.use_longer_context:
+        datasets = elastic_search.run_elastic_dense_retrieval(datasets, training_args, data_args)
     print(datasets)
 
+    breakpoint()
     # AutoConfig를 이용하여 pretrained model 과 tokenizer를 불러옵니다.
     # argument로 원하는 모델 이름을 설정하면 옵션을 바꿀 수 있습니다.
     config = AutoConfig.from_pretrained(

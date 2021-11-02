@@ -1,0 +1,41 @@
+# 모델
+python train.py --output_dir ./models/train_dataset --model_name_or_path sangrimlee/bert-base-multilingual-cased-korquad --do_train --overwrite_cache --overwrite_output_dir
+
+python train.py --output_dir ./models/train_dataset --model_name_or_path monologg/koelectra-base-v2-finetuned-korquad-384 --do_train --overwrite_cache --overwrite_output_dir
+
+python train.py --output_dir ./models/train_dataset --model_name_or_path klue/roberta-large --do_train --overwrite_cache --overwrite_output_dir
+
+
+python train.py --do_train --model_name_or_path klue/roberta-large --output_dir models/train_dataset/no_rtt_3 --num_train_epochs 3 --overwrite_output_dir --top_k_retrieval 5 --use_longer_context
+
+
+
+# 모델평가
+
+python train.py --output_dir ./models/train_dataset --model_name_or_path ./models/train_dataset/ --do_eval --overwrite_cache --overwrite_output_dir
+
+
+
+# 평가
+python train.py --output_dir ./outputs/train_dataset --model_name_or_path ./models/train_dataset/ --do_eval
+
+python inference.py --output_dir ./outputs/train_dataset/ --dataset_name ../data/train_dataset/ --model_name_or_path ./models/train_dataset/ --overwrite_output_dir --do_eval
+
+python inference.py --output_dir ./outputs/train_dataset/ --dataset_name ../data/train_dataset/ --model_name_or_path ./models/train_dataset --do_eval --overwrite_output_dir --top_k_retrieval 50 --eval_retrieval elastic_dense
+
+
+python inference.py --output_dir ./outputs/train_dataset/ --dataset_name ../data/train_dataset/ --model_name_or_path ./models/train_dataset/rtt_model --do_eval --overwrite_output_dir --top_k_retrieval 50 --eval_retrieval elastic_dense
+
+
+# 제출
+python inference.py --output_dir ./outputs/test_dataset/ --dataset_name ../data/test_dataset/ --model_name_or_path ./models/train_dataset/ --do_predict --overwrite_output_dir
+
+python inference.py --output_dir ./outputs/test_dataset/ --dataset_name ../data/test_dataset/ --model_name_or_path ./models/train_dataset/ --do_predict --overwrite_output_dir --top_k_retrieval 5
+
+python inference.py --output_dir ./outputs/test_dataset/ --dataset_name ../data/test_dataset/ --model_name_or_path ./models/train_dataset/ --do_predict --overwrite_output_dir --top_k_retrieval 100 --eval_retrieval elastic_sparse
+
+
+python inference.py --output_dir ./outputs/test_dataset/ --dataset_name ../data/test_dataset/ --model_name_or_path ./models/train_dataset/rtt_model --do_predict --overwrite_output_dir --top_k_retrieval 50 --eval_retrieval elastic_dense
+
+
+

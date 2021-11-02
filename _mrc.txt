@@ -1,0 +1,19 @@
+기본모델
+wandb:   train/exact_match 68.75
+wandb:            train/f1 77.40301
+
+rtt 1epoch
+wandb:   train/exact_match 66.25
+wandb:            train/f1 75.09573
+
+rtt 2epoch
+wandb:   train/exact_match 68.33333
+wandb:            train/f1 75.74916
+
+no_rtt 1epoch
+wandb:   train/exact_match 66.66667
+wandb:            train/f1 76.52455
+
+no_rtt 2epoch
+wandb:   train/exact_match 68.75
+wandb:            train/f1 77.08407

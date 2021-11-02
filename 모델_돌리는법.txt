@@ -1,0 +1,208 @@
+python train.py --do_train --rtt_dataset_name csv/papago_ner.csv --output_dir models/train_dataset/rtt_model --preprocessing_pattern 2 --num_train_epochs 1
+
+python train.py --do_train --rtt_dataset_name csv/papago_ner.csv --output_dir models/train_dataset/no_rtt --preprocessing_pattern 2 --num_train_epochs 1
+
+
+XY 90% 50
+train/exact_match 59.16667
+wandb:            train/f1 68.05838
+
+XY 85% 50
+train/exact_match 60.41667
+wandb:            train/f1 69.30838
+
+XY 85% 100
+wandb:   train/exact_match 60.41667
+wandb:            train/f1 69.30838
+
+XY 85% 50 rtt
+wandb:   train/exact_match 58.75
+wandb:            train/f1 68.02067
+
+2XY/(X+Y) 90% 50 rtt
+wandb:   train/exact_match 61.25
+wandb:            train/f1 69.09458
+
+XY/(X+Y) 90% 50 rtt
+wandb:   train/exact_match 61.25
+wandb:            train/f1 69.09458
+
+XY/(X+Y) 85% 50 rtt
+train/exact_match 60.41667
+wandb:            train/f1 68.83664
+
+XY/(X+Y) 90% 100 rtt
+wandb:   train/exact_match 61.25
+wandb:            train/f1 69.09458
+
+2XY/(X+Y) 90% 100 rtt
+wandb:   train/exact_match 61.25
+wandb:            train/f1 69.09458
+
+
+
+sen+bert 90% 50 rtt
+wandb:   train/exact_match 52.91667
+wandb:            train/f1 60.4861
+
+
+sen+bert 95% 50 rtt
+  exact_match  = 47.9167
+  f1           = 54.6296
+
+bm25(sen+bert) 50 95% rtt  
+wandb:   train/exact_match 55.41667
+wandb:            train/f1 64.11657
+
+bm25(sen+bert) 50 90% rtt
+wandb:   train/exact_match 57.08333
+wandb:            train/f1 66.4499
+
+bm25(sen+bert) 100 85% rtt
+wandb:   train/exact_match 57.91667
+wandb:            train/f1 67.71771
+
+bm25(sen+bert) 100 80% rtt
+wandb:   train/exact_match 60.0
+wandb:            train/f1 69.73755
+
+bm25(sen+bert) 100 75% rtt
+wandb:   train/exact_match 60.83333
+wandb:            train/f1 70.62644
+
+bm25(sen+bert) 5 0% rtt
+wandb:   train/exact_match 58.33333
+wandb:            train/f1 67.58742
+
+bm25 5 0% rtt
+wandb:   train/exact_match 53.75
+wandb:            train/f1 62.41419
+
+sen 5 0% rtt
+wandb:   train/exact_match 43.75
+wandb:            train/f1 51.02776
+
+bert 5 0% rtt
+wandb:   train/exact_match 0.41667
+wandb:            train/f1 0.41667
+
+sen+bert 5 0% rtt
+wandb:   train/exact_match 44.16667
+wandb:            train/f1 50.68517
+
+normalized(bm25)+sen+bert 5 0% rtt
+wandb:   train/exact_match 58.75
+wandb:            train/f1 68.00408
+
+normalized(bm25)+normalized(sen)+normalized(bert) 5 0% rtt
+wandb:   train/exact_match 58.33333
+wandb:            train/f1 67.58742
+
+normalized(bm25)*1.2+normalized(sen)+normalized(bert) 5 0% rtt
+wandb:   train/exact_match 57.08333
+wandb:            train/f1 66.33742
+
+normalized(bm25)+normalized(sen)+normalized(bert) 50 95% rtt
+wandb:   train/exact_match 58.33333
+wandb:            train/f1 68.01533
+
+normalized(bm25)+normalized(sen)+normalized(bert) 50 85% rtt
+wandb:   train/exact_match 61.25
+wandb:            train/f1 70.33047
+
+normalized(bm25)*1.2+normalized(sen)+normalized(bert) 50 85% rtt
+wandb:   train/exact_match 60.0
+wandb:            train/f1 69.08047
+
+normalized(bm25)*1.2+normalized(sen)*1.1+normalized(bert) 50 85% rtt
+wandb:   train/exact_match 61.25
+wandb:            train/f1 70.5388
+
+normalized(bm25)+normalized(sen)*1.1+normalized(bert) 50 85% rtt
+wandb:   train/exact_match 61.25
+wandb:            train/f1 70.60825
+
+normalized(bm25)+normalized(sen)*1.2+normalized(bert) 50 85% rtt
+wandb:   train/exact_match 61.25
+wandb:            train/f1 70.39992
+
+normalized(bm25)+normalized(sen)*1.1+normalized(bert) 50 85%
+wandb:   train/exact_match 56.25
+wandb:            train/f1 64.5058
+
+normalized(bm25)+normalized(sen)*1.1+normalized(bert) 50 90%
+wandb:   train/exact_match 59.58333
+wandb:            train/f1 68.95521
+
+normalized(bm25)+normalized(sen)+normalized(bert) 50 90%
+wandb:   train/exact_match 59.58333
+wandb:            train/f1 69.02465
+
+normalized(bm25)*1.1+normalized(sen)+normalized(bert) 50 90%
+wandb:   train/exact_match 59.58333
+wandb:            train/f1 69.02465
+
+===============================위에꺼 bert 전부 다른 q_encoder로 돌림================================
+normalized(bm25)+normalized(sen)+normalized(bert) 50 90%
+wandb:   train/exact_match 59.58333
+wandb:            train/f1 69.02465
+
+normalized(bm25)+normalized(sen)+normalized(bert) 50 90% rtt
+wandb:   train/exact_match 61.66667
+wandb:            train/f1 71.25144
+
+normalized(bm25)+normalized(sen)+normalized(bert) 50 85% rtt
+wandb:   train/exact_match 60.83333
+wandb:            train/f1 69.73325
+
+normalized(bm25)*1.1+normalized(sen)+normalized(bert) 50 90% rtt
+wandb:   train/exact_match 61.25
+wandb:            train/f1 70.83477
+
+normalized(bm25)+normalized(sen)*1.1+normalized(bert) 50 90% rtt
+wandb:   train/exact_match 60.41667
+wandb:            train/f1 70.00144
+
+normalized(bm25)+normalized(sen)*1.1+normalized(bert) 100 85% rtt
+wandb:   train/exact_match 60.41667
+wandb:            train/f1 69.52492
+
+normalized(bm25)+normalized(sen)+normalized(bert) 100 90% rtt
+wandb:   train/exact_match 61.25
+wandb:            train/f1 70.83477
+
+normalized(bm25)+normalized(sen)+normalized(bert) 100 85% rtt
+wandb:   train/exact_match 60.83333
+wandb:            train/f1 69.73325
+
+normalized(bm25)+normalized(sen)+normalized(bert) 100 95% rtt
+wandb:   train/exact_match 58.33333
+wandb:            train/f1 68.01533
+
+normalized(bm25)+normalized(sen)+normalized(bert) 100 90% rtt
+wandb:   train/exact_match 61.25
+wandb:            train/f1 70.83477
+
+normalized(bm25)+normalized(sen)+normalized(bert) 100 90% rtt
+wandb:   train/exact_match 62.08333
+wandb:            train/f1 69.54162
+
+normalized(bm25)+normalized(sen)+normalized(bert) 100 85% rtt_2
+wandb:   train/exact_match 60.41667
+wandb:            train/f1 67.21688
+
+normalized(bm25)+normalized(sen)+normalized(bert) 100 90% no_rtt_2
+wandb:   train/exact_match 62.91667
+wandb:            train/f1 70.88268
+
+normalized(bm25)+normalized(sen)+normalized(bert) 100 85% no_rtt_2
+wandb:   train/exact_match 62.08333
+wandb:            train/f1 70.32134
+
+normalized(bm25)+normalized(sen)+normalized(bert) 10 0% no_rtt_2
+wandb:   train/exact_match 59.58333
+wandb:            train/f1 67.38384
+
+normalized(bm25)+normalized(sen)+normalized(bert) 5 0% no_rtt_2
+wandb:   train/exact_match 58.33333
+wandb:            train/f1 66.67551

@@ -7,6 +7,7 @@ Open-Domain Question Answering 을 수행하는 inference 코드 입니다.
 
 import logging
 import sys
+import torch
 from typing import Callable, List, Dict, NoReturn, Tuple
 
 import numpy as np
@@ -64,18 +65,15 @@ def main():
         (ModelArguments, DataTrainingArguments, TrainingArguments, LoggingArguments)
     )
     model_args, data_args, training_args, log_args = parser.parse_args_into_dataclasses()
-
-    #trainingarguments
-    training_args.per_device_eval_batch_size = 512
-    
+       
     #wandb
     load_dotenv(dotenv_path=log_args.dotenv_path)
     WANDB_AUTH_KEY = os.getenv("WANDB_AUTH_KEY")
     wandb.login(key=WANDB_AUTH_KEY)
-
+    
     wandb.init(
         entity="klue-level2-nlp-02",
-        project="mrc_project_1",
+        project=log_args.project_name,
         name=log_args.wandb_name + "_eval" if training_args.do_eval==True else "_inference",
         group=model_args.model_name_or_path,
     )
@@ -99,6 +97,8 @@ def main():
 
     # 모델을 초기화하기 전에 난수를 고정합니다.
     set_seed(training_args.seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
     
     #데이터셋을 불러옵니다.
     datasets = load_from_disk(data_args.dataset_name)
@@ -146,7 +146,6 @@ def main():
     # eval or predict mrc model
     if training_args.do_eval or training_args.do_predict:
         run_mrc(data_args, training_args, model_args, datasets, tokenizer, model)
-
 
 def run_dense_retrieval(
     model_checkpoint: str,

@@ -1,6 +1,7 @@
 import logging
 import os
 import sys
+import torch
 import pandas as pd
 
 from typing import List, Callable, NoReturn, NewType, Any
@@ -53,7 +54,7 @@ def main():
     wandb.init(
         entity="klue-level2-nlp-02",
         project="mrc_project_1",
-        name=log_args.wandb_name,
+        name=log_args.wandb_name + "_train/train" if training_args.do_train==True else "_train/eval",
         group=model_args.model_name_or_path,
     )
     wandb.config.update(training_args)
@@ -78,6 +79,9 @@ def main():
 
     # 모델을 초기화하기 전에 난수를 고정합니다.
     set_seed(training_args.seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
     # 데이터셋을 불러옵니다.
     datasets = load_from_disk(data_args.dataset_name)
     
@@ -85,7 +89,7 @@ def main():
     if data_args.rtt_dataset_name != None:
         print(" "+"*"*50,"\n","*"*50,"\n","*"*50)
         print(" ***** rtt 데이터 병합 전 데이터 개수: ", len(datasets['train']),"******")
-        rtt_data = pd.read_csv(data_args.rtt_dataset_name)
+        rtt_data = pd.read_csv(data_args.rtt_dataset_name,  index_col=0)
         rtt_data['answers'] = rtt_data.answers.map(eval)
 
         train_data = datasets['train'].to_pandas()
@@ -155,15 +159,14 @@ def main():
             data_path = '/opt/ml/data',
             context_path = 'wikipedia_documents.json',
             pt_num=data_args.preprocessing_pattern,
-            split_special_token_flag=data_args.add_special_tokens_flag
+            add_special_tokens_flag=data_args.add_special_tokens_flag
         )
 
         retriever.get_sparse_BM25()
         train_data = datasets['train']
-        train_data = retriever.retrieve_train_BM25(dataset=train_data, topk=3)
+        train_data = retriever.retrieve_train_BM25(dataset=train_data, topk=2)
         datasets['train'] = train_data
         print("\n","Retrieved 이후 : \n", datasets['train']['context'][0])
-
 
     print(
         type(training_args),
@@ -176,7 +179,6 @@ def main():
     # do_train mrc model 혹은 do_eval mrc model
     if training_args.do_train or training_args.do_eval:
         run_mrc(data_args, training_args, model_args, datasets, tokenizer, model)
-
 
 def run_mrc(
     data_args: DataTrainingArguments,

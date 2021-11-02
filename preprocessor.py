@@ -26,6 +26,7 @@ class Preprocessor :
             for num in pt_num:
                 preprocessing = lambda x : self.pattern_dict[num].sub(" ", x)
                 pd_data["contexts"] = pd_data.contexts.map(preprocessing)
+            pd_data["contexts"] = pd_data.contexts.map(lambda x : re.sub("\s+"," ", x))
             data = pd_data.drop_duplicates("contexts").contexts.to_list()
         return data
 
@@ -53,5 +54,6 @@ class Preprocessor :
     def sen_preprocess(self, context, pt_num) :
         for num in pt_num:
             context = self.pattern_dict[num].sub(" ",context)
+            context = re.sub("\s+"," ",context)
         return context
 

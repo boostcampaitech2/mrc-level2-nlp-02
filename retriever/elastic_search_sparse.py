@@ -6,6 +6,7 @@ import json
 from elasticsearch import Elasticsearch, helpers
 import pandas as pd
 from datasets import DatasetDict, Dataset
+from pandas.core.frame import DataFrame
 import torch
 from tqdm import tqdm
 from transformers import TrainingArguments, AutoModel, AutoTokenizer
@@ -17,6 +18,7 @@ from arguments import (
     ModelArguments,
     DataTrainingArguments,
 )
+from retriever import model_encoder
 
 if os.path.dirname(os.path.abspath(os.path.dirname(__file__))) in sys.path :
     sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
@@ -46,6 +48,19 @@ def generator(contexts, index_name):
         }
     raise StopIteration
 
+def generator_dense(text, title, document_id, p_embs_sen, p_embs_bert):
+    for text_el, title_el, document_id_el, p_emb_sen, p_emb_bert in zip(text,title,document_id, p_embs_sen, p_embs_bert):
+        yield {
+        '_index': 'wiki_documents_dense',
+        '_type': '_doc',
+        '_id': document_id_el,
+        '_source': {
+            'text': text_el,
+            'vector_sen': p_emb_sen,
+            'vector_bert': p_emb_bert
+            }
+        }
+    raise StopIteration
 
 def select_ESconfig(filtpath: str) -> str:
     """[summary]
@@ -75,6 +90,24 @@ def select_ESconfig(filtpath: str) -> str:
     ESconfig = re.sub("\\|\n|  ", "", lines)
     return ESconfig
 
+def dense_embedding(df: DataFrame)-> List:
+    tokenizer = AutoTokenizer.from_pretrained('klue/bert-base')
+    p_encoder_sen = model_encoder.RobertaEncoder.from_pretrained('encoders/p_encoder_neg_sen').to('cuda')
+    p_encoder_bert = model_encoder.BertEncoder.from_pretrained('encoders/p_encoder').to('cuda')
+    p_embs_sen = []
+    p_embs_bert = []
+    for index, document in tqdm(df.iterrows()):
+        with torch.no_grad():
+            p_encoder_sen.eval()
+            p_encoder_bert.eval()
+            p_val_sen = tokenizer([document['text']], padding="max_length", truncation=True, return_tensors='pt', max_length=510, return_token_type_ids=False).to('cuda')
+            p_val_bert = tokenizer([document['text']], padding="max_length", truncation=True, return_tensors='pt').to('cuda')
+            p_emb_sen = p_encoder_sen(**p_val_sen)
+            p_emb_bert = p_encoder_bert(**p_val_bert)
+            
+            p_embs_sen.append(p_emb_sen[0].cpu().detach().numpy().tolist())
+            p_embs_bert.append(p_emb_bert[0].cpu().detach().numpy().tolist())
+    return p_embs_sen, p_embs_bert
 
 def prepare_sparse_config(es, docs_config, index_name, data_args):
     es_indices = es.indices.get_alias("*").keys()
@@ -158,7 +191,8 @@ def search_with_elastic(
     question: str,
     index_name: str,
     data_args: DataTrainingArguments,
-    q_encoder: Optional[AutoModel] = None,
+    q_encoder_sen: Optional[AutoModel] = None,
+    q_encoder_bert: Optional[AutoModel] = None,
     tokenizer: Optional[AutoTokenizer] = None,
 ) -> str:
     query = {"query": {"match": {"text": question}}}

@@ -38,6 +38,7 @@ from trainer_qa import QuestionAnsweringTrainer
 
 from retriever.rt_bm25 import SparseRetrieval
 from retriever import elastic_search_sparse
+from retriever.elastic_search import run_elastic_sparse_retrieval, run_elastic_dense_retrieval
 
 from arguments import (
     ModelArguments,
@@ -158,7 +159,13 @@ def main():
             training_args,
             data_args,
         )
-    
+    elif data_args.eval_retrieval == "elastic_dense":
+        datasets = run_elastic_dense_retrieval(
+            datasets,
+            training_args,
+            data_args,
+        )
+        
     if data_args.re_rank == True:
         if 'roberta' in model_args.rt_model_name:
             rt_tokenizer = AutoTokenizer.from_pretrained(model_args.rt_model_name)

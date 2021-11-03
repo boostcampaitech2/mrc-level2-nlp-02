@@ -32,8 +32,7 @@ training_dataset = load_from_disk('../data/train_dataset')['train']
 from transformers import AutoTokenizer
 import numpy as np
 
-# model_checkpoint = "bert-base-multilingual-cased"
-# model_checkpoint = "klue/roberta-base"
+
 model_checkpoint = "klue/bert-base"
 
 tokenizer = AutoTokenizer.from_pretrained(model_checkpoint)
@@ -55,8 +54,7 @@ random.seed(2021)
 
 from torch.utils.data import (DataLoader, RandomSampler, TensorDataset)
 
-# q_seqs = tokenizer(training_dataset['question'], padding="max_length", truncation=True, return_tensors='pt', return_token_type_ids=False)
-# p_seqs = tokenizer(training_dataset['context'], padding="max_length", truncation=True, return_tensors='pt', return_token_type_ids=False)
+
 q_seqs = tokenizer(training_dataset['question'], padding="max_length", truncation=True, return_tensors='pt')
 p_seqs = tokenizer(training_dataset['context'], padding="max_length", truncation=True, return_tensors='pt')
 
@@ -140,13 +138,9 @@ def train(args, dataset, p_model, q_model):
       p_outputs = p_model(**p_inputs)  # (batch_size, emb_dim)
       q_outputs = q_model(**q_inputs)  # (batch_size, emb_dim)
 
-      breakpoint()
       # Calculate similarity score & loss
       sim_scores = torch.matmul(q_outputs, torch.transpose(p_outputs, 0, 1))  # (batch_size, emb_dim) x (emb_dim, batch_size) = (batch_size, batch_size)
       
-      # print('q_outputs: ',q_outputs)
-      # print('p_outputs: ',p_outputs)
-      # print('sim_scores: ',sim_scores)
         
       # target: position of positive samples = diagonal element 
       targets = torch.arange(0, args.per_device_train_batch_size).long()
@@ -192,3 +186,6 @@ if torch.cuda.is_available():
 
 
 p_encoder, q_encoder = tqdm(train(args, train_dataset, p_encoder, q_encoder))
+
+p_encoder.save_pretrained('../encoders/p_encoder_test')
+q_encoder.save_pretrained('../encoders/q_encoder_test')

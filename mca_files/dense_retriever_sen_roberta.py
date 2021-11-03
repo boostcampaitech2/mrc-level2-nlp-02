@@ -32,7 +32,7 @@ es = Elasticsearch([{'host': 'localhost', 'port': 9200}])
 
 import model_encoder
 
-dataset = load_from_disk('../data/train_dataset')['validation']
+
 
 # 난수 고정
 def set_seed(random_seed):
@@ -252,20 +252,15 @@ class DenseRetrieval:
           p_outputs = self.p_encoder(**p_inputs)
           q_outputs = self.q_encoder(**q_inputs)
           
-          # print(p_outputs.shape, q_outputs.shape)
 
-          # 기존의것 p_outputs = p_outputs.view(batch_size, -1, self.num_neg+1)
-          # 내가시도 q_outputs = torch.transpose(q_outputs.view(batch_size, -1, 1),1,2)
-            
-          # 틀림 q_outputs = q_outputs.view(batch_size, 1, -1)
         
           p_outputs = p_outputs.view(batch_size, self.num_neg + 1, -1).transpose(1, 2)
           q_outputs = q_outputs.view(batch_size, 1, -1)
           
-          # print(p_outputs.shape, q_outputs.shape)
+
 
           sim_scores = torch.bmm(q_outputs, p_outputs).squeeze()
-          # breakpoint()
+          
           sim_scores = sim_scores.view(batch_size, -1)
           sim_scores = F.log_softmax(sim_scores, dim=1)
 
@@ -290,10 +285,10 @@ class DenseRetrieval:
 
           del p_inputs, q_inputs
 
-          # print('loss:', loss)
+          
           total_loss += loss
           count_iteration += 1
-          # print(count_iteration)
+          
 
           if count_iteration == valid_check_period:
             count_iteration = 0
@@ -367,71 +362,12 @@ class DenseRetrieval:
               print('accuracy: ', valid_correct/valid_total)
               if valid_loss < min_loss:
                 print('New min loss, so saving the model.')
-                retriever.p_encoder.save_pretrained('encoders/p_encoder_neg_sen')
-                retriever.q_encoder.save_pretrained('encoders/q_encoder_neg_sen')
+                retriever.p_encoder.save_pretrained('encoders/p_encoder_neg_sen_test')
+                retriever.q_encoder.save_pretrained('encoders/q_encoder_neg_sen_test')
                 min_loss = valid_loss
 
 
 
-  def get_relevant_doc(self, query, k=1, args=None, p_encoder=None, q_encoder=None):
-    if args is None:
-      args = self.args
-    
-    if p_encoder is None:
-      p_encoder = self.p_encoder
-    
-    if q_encoder is None:
-      q_encoder = self.q_encoder
-
-    with torch.no_grad():
-      p_encoder.eval()
-      q_encoder.eval()
-
-      q_seqs_val = self.tokenizer(
-        [query],
-        padding = 'max_length',
-        truncation= True,
-        return_tensors = 'pt',
-        # return_token_type_ids=False,
-      ).to(args.device)
-      q_emb = q_encoder(**q_seqs_val).to('cpu')
-
-      p_embs = []
-      for batch in self.passage_dataloader:
-        batch = tuple(t.to(args.device) for t in batch)
-        p_inputs = {
-          'input_ids': batch[0],
-          'attention_mask': batch[1],
-          'token_type_ids': batch[2]
-        }
-        p_emb = p_encoder(**p_inputs).to('cpu')
-        p_embs.append(p_emb)
-    
-    p_embs = torch.stack(
-      p_embs, dim = 0
-    ).view(len(self.passage_dataloader.dataset), -1)
-
-    dot_prod_scores = torch.matmul(q_emb, torch.transpose(p_embs, 0, 1))
-    rank = torch.argsort(dot_prod_scores, dim=1, descending=True).squeeze()
-
-    return rank[:k]
-
-class BertEncoder(BertPreTrainedModel):
-  def __init__(self, config):
-    super().__init__(config)
-
-    self.bert = BertModel(config)
-    self.init_weights()
-
-  def forward(self, input_ids, attention_mask=None, token_type_ids=None):
-    outputs = self.bert(
-      input_ids,
-      attention_mask = attention_mask,
-      token_type_ids = token_type_ids
-    )
-
-    pooled_output = outputs[1]
-    return pooled_output
 
 train_dataset = load_from_disk('../data/train_dataset')['train']
 valid_dataset = load_from_disk('../data/train_dataset')['validation']
@@ -450,15 +386,11 @@ args = TrainingArguments(
   weight_decay=0.01
 )
 
-# model_checkpoint = 'klue/bert-base'
 
 model_checkpoint = 'Huffon/sentence-klue-roberta-base'
 
 tokenizer = AutoTokenizer.from_pretrained(model_checkpoint)
 
-
-# p_encoder = BertEncoder.from_pretrained(model_checkpoint).to(args.device)
-# q_encoder = BertEncoder.from_pretrained(model_checkpoint).to(args.device)
 
 p_encoder = model_encoder.RobertaEncoder.from_pretrained(model_checkpoint).to(args.device)
 q_encoder = model_encoder.RobertaEncoder.from_pretrained(model_checkpoint).to(args.device)
@@ -475,6 +407,3 @@ retriever = DenseRetrieval(
 )
 
 retriever.train()
-
-# retriever.p_encoder.save_pretrained('encoders/p_encoder_neg_sen')
-# retriever.q_encoder.save_pretrained('encoders/q_encoder_neg_sen')

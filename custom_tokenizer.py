@@ -94,7 +94,7 @@ def get_added_token(trainset, tokenizer, data_selected):
 
 def add_special_tokens(tokenizer):
     special_tokens_dict = speical_tokens
-    return tokenizer.add_special_tokens(special_tokens_dict)  
+    tokenizer.add_special_tokens(special_tokens_dict)  
 
 def save_customized_tokenizer(trainset, pretrained_model_name_or_path, data_selected,
                               use_fast, tokenizer_name,add_special_tokens_flag):
@@ -103,7 +103,7 @@ def save_customized_tokenizer(trainset, pretrained_model_name_or_path, data_sele
     tokenizer.add_tokens(added_token_list)
     
     if add_special_tokens_flag==True:
-        tokenizer = add_special_tokens(tokenizer)
+        add_special_tokens(tokenizer)
 
     #tokenizer 저장
     tokenizer.save_pretrained(tokenizer_name)

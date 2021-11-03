@@ -219,8 +219,11 @@ def run_sparse_retrieval(
     # Query에 맞는 Passage들을 Retrieval 합니다.
     # retriever 설정
     retriever = SparseRetrieval(
-        tokenize_fn=tokenize_fn, data_path=data_path, context_path=context_path,
-        pt_num=data_args.preprocessing_pattern
+        tokenize_fn=tokenize_fn, 
+        data_path=data_path, 
+        context_path=context_path,
+        pt_num=data_args.preprocessing_pattern,
+        add_special_tokens_flag=data_args.add_special_tokens_flag
     )
     
     # Passage Embedding 만들기

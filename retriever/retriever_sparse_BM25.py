@@ -126,13 +126,14 @@ class SparseRetrieval:
             print("BM25_class_instant pickle saved.")
 
     def retrieve_train_BM25(
-        self, dataset: Union[str, Dataset], topk: Optional[int] = 1,
+        self, dataset: Union[str, Dataset], topk: Optional[int] = 1, rtt_name : Optional[str] = None
     ) -> Union[Tuple[List, List], pd.DataFrame]:
         assert self.BM25 is not None and isinstance(dataset, Dataset)
 
         sep_flag = 1 if self.add_special_tokens_flag == True else 0
-        json_name = f"train_retrieval_{self.pt_num}_{sep_flag}.json"
-        json_path = os.path.join(self.data_path, json_name)
+        rtt_flag = 1 if rtt_name != None else 0
+        json_name = f"train_retrieval_{self.pt_num}_{sep_flag}_{rtt_flag}.json"
+        json_path = os.path.join('./json', json_name)
 
         if os.path.isfile(json_path):
             print("Load Saved Retrieval Json Data.")

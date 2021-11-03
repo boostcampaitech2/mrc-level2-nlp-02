@@ -57,6 +57,6 @@ class Preprocessor :
     def sen_preprocess(self, context, pt_num) :
         for num in pt_num:
             context = self.pattern_dict[num].sub(" ",context) 
-            context = re.sub('\s+' , ' ', context)   
+            context = re.sub('\s+', ' ', context)   
         return context
 

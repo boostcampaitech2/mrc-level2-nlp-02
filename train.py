@@ -17,7 +17,6 @@ from transformers import (
     set_seed,
 )
 
-
 from utils_qa import postprocess_qa_predictions, check_no_error
 from trainer_qa import QuestionAnsweringTrainer
 from retriever.retriever_dense import DenseRetrieval
@@ -163,8 +162,8 @@ def main():
         )
 
         retriever.get_sparse_BM25()
-        train_data = datasets['train']
-        train_data = retriever.retrieve_train_BM25(dataset=train_data, topk=2)
+        train_data = datasets['train'] 
+        train_data = retriever.retrieve_train_BM25(dataset=train_data, topk=2, rtt_name=data_args.rtt_dataset_name)
         datasets['train'] = train_data
         print("\n","Retrieved 이후 : \n", datasets['train']['context'][0])
 

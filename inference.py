@@ -52,7 +52,7 @@ import wandb
 from dotenv import load_dotenv
 import os
 
-from retriever.rt_model import BertEncoder
+from retriever.rt_model import BertEncoder, klueRobertaEncoder
 
 
 from preprocessor import Preprocessor
@@ -149,19 +149,24 @@ def main():
         )
     
     if data_args.re_rank == True:
-        rt_tokenizer = AutoTokenizer.from_pretrained(model_args.rt_model_name)
-        p_encoder = BertEncoder.from_pretrained(model_args.rt_model_name)
-        q_encoder = BertEncoder.from_pretrained(model_args.rt_model_name)
+        if 'roberta' in model_args.rt_model_name:
+            rt_tokenizer = AutoTokenizer.from_pretrained(model_args.rt_model_name)
+            p_encoder = klueRobertaEncoder(model_args.rt_model_name)
+            q_encoder = klueRobertaEncoder(model_args.rt_model_name)
+        else:
+            rt_tokenizer = AutoTokenizer.from_pretrained(model_args.rt_model_name)
+            p_encoder = BertEncoder.from_pretrained(model_args.rt_model_name)
+            q_encoder = BertEncoder.from_pretrained(model_args.rt_model_name)
         p_encoder, q_encoder = load_rerank_model(p_encoder, q_encoder)
 
 
-        datasets = re_rank_use_model(training_args, datasets, rt_tokenizer, p_encoder, q_encoder, data_args.re_rank_top_k)
+        datasets = re_rank_use_model(training_args, model_args.rt_model_name, datasets, rt_tokenizer, p_encoder, q_encoder, data_args.re_rank_top_k)
 
     # eval or predict mrc model
     if training_args.do_eval or training_args.do_predict:
         run_mrc(data_args, training_args, model_args, datasets, tokenizer, model)
 
-def re_rank_use_model(training_args, datasets:DatasetDict, tokenizer, p_encoder, q_encoder, re_rank_top_k = 10):
+def re_rank_use_model(training_args, model_name, datasets:DatasetDict, tokenizer, p_encoder, q_encoder, re_rank_top_k = 10):
     df = datasets['validation'].to_pandas()
     
     queries = df['question'].tolist()
@@ -188,7 +193,7 @@ def re_rank_use_model(training_args, datasets:DatasetDict, tokenizer, p_encoder,
             padding="max_length",
             truncation=True,
             return_tensors="pt",
-            return_token_type_ids=True,
+            return_token_type_ids=False if 'roberta' in model_name else True,
         ).to('cuda')  # (1, 512)
 
         p_seqs = tokenizer(
@@ -196,7 +201,7 @@ def re_rank_use_model(training_args, datasets:DatasetDict, tokenizer, p_encoder,
             padding="max_length",
             truncation=True,
             return_tensors="pt",
-            return_token_type_ids=True,
+            return_token_type_ids=False if 'roberta' in model_name else True,
         ).to('cuda')  # (top_k, 512)      
 
         with torch.no_grad():
@@ -207,7 +212,7 @@ def re_rank_use_model(training_args, datasets:DatasetDict, tokenizer, p_encoder,
             p_outputs = p_encoder(**p_seqs).to('cpu')
 
             sim_score = torch.matmul(q_outputs, p_outputs.transpose(0,1)) # (1, top_k)
-            indices = torch.argsort(sim_score, dim=1, descending=True).squeeze()[:re_rank_top_k]
+            indices = torch.argsort(sim_score, dim=1, descending=True).squeeze(0)[:re_rank_top_k]
         temp = []
         for i in indices:
             temp.append(top_k_passage[idx][i])
@@ -245,7 +250,8 @@ def re_rank_use_model(training_args, datasets:DatasetDict, tokenizer, p_encoder,
     return DatasetDict({"validation": Dataset.from_pandas(df, features=f)})
 
 def load_rerank_model(p_encoder, q_encoder):
-    file_list = glob('/opt/ml/mrc-level2-nlp-02/retriever/encoders/*')
+    file_list = glob('/opt/ml/mrc-level2-nlp-02/encoders/*')
+
 
     for idx, file_name in enumerate(file_list):
         print(f"{idx} : {file_name.split('/')[-1]}")

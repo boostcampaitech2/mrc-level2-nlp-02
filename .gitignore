@@ -3,6 +3,7 @@
 *.pt
 *.bin
 *.sh
+*.ipynb
 wandb.env
 outputs/
 wandb/
@@ -16,4 +17,5 @@ runs/**
 encoders/**
 retriever/__pycache__/
 retriever/encoders/**
+retriever/*.ipynb
 tokenizer/**

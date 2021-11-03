@@ -4,7 +4,7 @@ import time
 import pickle
 import numpy as np
 import pandas as pd
-from rank_bm25 import BM25Plus
+from rank_bm25 import BM25Plus, BM25L, BM25L
 
 from tqdm.auto import tqdm
 from contextlib import contextmanager
@@ -102,7 +102,7 @@ class SparseRetrieval:
 
         # Pickle을 저장 "0123"
         pt_num_sorted = "".join(sorted(self.pt_num)) if self.pt_num else "raw"
-        pickle_name = f"BM25_embedding_{pt_num_sorted}.bin"
+        pickle_name = f"BM25_embedding_{pt_num_sorted}_BM25L.bin"
         bm_emd_path = os.path.join(self.data_path, pickle_name)
 
         # BM25 존재하면 가져오기
@@ -117,7 +117,7 @@ class SparseRetrieval:
             print("Build passage BM25_class_instant")
             # BM25는 어떤 text 전처리 X ->  BM25 클래스의 인스턴스를 생성
             tokenized_contexts = [self.tokenizer(i) for i in tqdm(self.contexts)]
-            self.BM25 = BM25Plus(tokenized_contexts)
+            self.BM25 = BM25L(tokenized_contexts)
             with open(bm_emd_path, "wb") as file:
                 pickle.dump(self.BM25, file)
             print("BM25_class_instant pickle saved.")

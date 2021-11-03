@@ -39,7 +39,7 @@ def make_custom_dataset_with_bm25(
             pd_data["original_context"] = pd_data.original_context.map(preprocessing)
             pd_data["original_context"] = pd_data.original_context.map(blank_remove)
         original_context = pd_data.original_context.to_list()
-
+    
     top_k_passage = []
     target = []
 
@@ -61,7 +61,7 @@ def make_custom_dataset_with_bm25(
     custom_dataset["top_k_passage"] = top_k_passage
     custom_dataset["target"] = target
 
-    file_name = os.path.join(save_path, f"bm25_top{top_k}_pp{pt_num}.pickle")
+    file_name = os.path.join(save_path, f"bm25_top{top_k}_pp{pt_num}_BM25L.pickle")
     
     with open(file_name, "wb") as f:
         pickle.dump(custom_dataset, f)
@@ -93,7 +93,7 @@ def main(model_args, data_args):
     )
     bm25_path_valid = os.path.join(
         data_args.save_dir,
-        f"bm25_top{data_args.top_k_retrieval}_pp{data_args.preprocessing_pattern}_val.csv",
+        f"bm25_top{data_args.top_k_retrieval}_pp{data_args.preprocessing_pattern}_val_BM25L.csv",
     )
 
     retriever.get_sparse_BM25()
@@ -102,22 +102,22 @@ def main(model_args, data_args):
         df_train = pd.read_csv(bm25_path_train)
         df_valid = pd.read_csv(bm25_path_valid)
     else:
-        df_train = retriever.retrieve_BM25(
-            datasets["train"],
-            topk=data_args.top_k_retrieval,
-            score_ratio=data_args.score_ratio,
-        )
+        # df_train = retriever.retrieve_BM25(
+        #     datasets["train"],
+        #     topk=data_args.top_k_retrieval,
+        #     score_ratio=data_args.score_ratio,
+        # )
         df_valid = retriever.retrieve_BM25(
             datasets["validation"],
             topk=data_args.top_k_retrieval,
             score_ratio=data_args.score_ratio,
         )
-        df_train.to_csv(bm25_path_train, index=False)
+        # df_train.to_csv(bm25_path_train, index=False)
         df_valid.to_csv(bm25_path_valid, index=False)
 
-    make_custom_dataset_with_bm25(
-        df_train, data_args.train_pickle_save_dir, top_k=data_args.top_k_retrieval, pt_num=data_args.preprocessing_pattern
-    )
+    # make_custom_dataset_with_bm25(
+    #     df_train, data_args.train_pickle_save_dir, top_k=data_args.top_k_retrieval, pt_num=data_args.preprocessing_pattern
+    # )
     make_custom_dataset_with_bm25(
         df_valid, data_args.valid_pickle_save_dir, top_k=data_args.top_k_retrieval, pt_num=data_args.preprocessing_pattern
     )

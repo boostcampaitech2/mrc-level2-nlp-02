@@ -14,6 +14,8 @@ from transformers import (
     HfArgumentParser,
     AutoTokenizer,
     get_linear_schedule_with_warmup,
+    get_cosine_schedule_with_warmup,
+    AutoModel
 )
 
 from rt_arguments import (
@@ -57,7 +59,7 @@ def train(args, p_encoder, q_encoder, train_dataloader, valid_dataloader, top_k)
     )
     t_total = (len(train_dataloader) // args.gradient_accumulation_steps * args.num_train_epochs)
 
-    scheduler = get_linear_schedule_with_warmup(
+    scheduler = get_cosine_schedule_with_warmup(
         optimizer, num_warmup_steps=args.warmup_steps, num_training_steps=t_total
     )
     scaler = GradScaler()
@@ -213,9 +215,10 @@ def main(model_args, data_args, training_args):
     if 'roberta' in model_args.model_name_or_path:
         p_encoder = klueRobertaEncoder(model_args.model_name_or_path)
         q_encoder = klueRobertaEncoder(model_args.model_name_or_path)
-    elif 'bert' in model_args.model_name_or_path:
+    else:
         p_encoder = BertEncoder.from_pretrained(model_args.model_name_or_path)
         q_encoder = BertEncoder.from_pretrained(model_args.model_name_or_path)
+    
 
     rt_train_dataset = RtTrainDataset(
         train_dataset, tokenizer, model_name=model_args.model_name_or_path

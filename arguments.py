@@ -36,6 +36,10 @@ class ModelArguments:
         default=False,
         metadata={"help": "Load customized roberta tokenizer"},
     )
+    k_fold : int = field(
+        default=5,
+        metadata={"help": "K for K-fold validation"},
+    )
 
 
 @dataclass

@@ -276,9 +276,7 @@ class SparseRetrieval:
             # Retrieve한 Passage를 pd.DataFrame으로 반환합니다.
             total = []
             with timer("query exhaustive search"):
-                doc_scores, doc_indices = self.get_relevant_doc_bulk_BM25(
-                    query_or_dataset["question"], k=topk, score_ratio=score_ratio
-                )
+                doc_scores, doc_indices = self.get_relevant_doc_bulk_BM25(query_or_dataset, k=topk, score_ratio=score_ratio)
             for idx, example in enumerate(
                 tqdm(query_or_dataset, desc="BM25 retrieval: ")
             ):
@@ -326,8 +324,8 @@ class SparseRetrieval:
         return doc_scores[doc_indices[:k]], doc_indices[:k]
 
     def get_relevant_doc_bulk_BM25(
-        self, queries: List, k: Optional[int] = 1, score_ratio: Optional[float] = None
-    ) -> Tuple[List, List]:
+        self, query_or_dataset: Union[str, Dataset], k: Optional[int] = 1, score_ratio: Optional[float] = 0
+        ) -> Tuple[List, List]:
 
         """
         Arguments:
@@ -339,6 +337,7 @@ class SparseRetrieval:
             vocab 에 없는 이상한 단어로 query 하는 경우 assertion 발생 (예) 뙣뙇?
         """
         print("Build BM25 score, indices")
+        queries = query_or_dataset['question']
         tokenized_queries = [self.tokenizer(i) for i in queries]
         doc_scores = []
         doc_indices = []
@@ -362,5 +361,15 @@ class SparseRetrieval:
             else:
                 doc_scores.append(sorted_score[:k])
                 doc_indices.append(sorted_id[:k])
-
+        
+        if 'answers' in  query_or_dataset.column_names :
+            print(f'** Calculating Recall@{k}')
+            cnt = 0
+            for i, q in enumerate(query_or_dataset['context']) :
+                for wiki_idx in list(doc_indices[i]) :
+                    if q == self.contexts[wiki_idx]:
+                        cnt += 1
+                        break
+            total_len = len(query_or_dataset['context'])
+            print(f'** Recall@{k} = {cnt / total_len: .4f}, Count:{cnt}')
         return doc_scores, doc_indices

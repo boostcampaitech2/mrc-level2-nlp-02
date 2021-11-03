@@ -1,6 +1,5 @@
 """
 Open-Domain Question Answering 을 수행하는 inference 코드 입니다.
-
 대부분의 로직은 train.py 와 비슷하나 retrieval, predict 부분이 추가되어 있습니다.
 """
 
@@ -38,7 +37,7 @@ from utils_qa import postprocess_qa_predictions, check_no_error
 from trainer_qa import QuestionAnsweringTrainer
 
 from retriever.rt_bm25 import SparseRetrieval
-from retriever.elastic_search import run_elastic_sparse_retrieval
+from retriever import elastic_search_sparse
 
 from arguments import (
     ModelArguments,
@@ -114,7 +113,7 @@ def main():
     if training_args.do_predict==True and data_args.add_special_tokens_query_flag:
         q_type_data = pd.read_csv("./csv/question_tag_testset.csv",index_col=0)
         train_data = datasets['validation'].to_pandas()
-        train_data['question'] = train_data['question']+q_type_data['Q_tag']
+        train_data['question'] = train_data['question']+' '+q_type_data['Q_tag']
         datasets['validation'] = datasets['validation'].from_pandas(train_data)
         print(datasets['validation']['question'][0])
         print("======================================= predict Tag complete============================")
@@ -124,7 +123,7 @@ def main():
             q_type_data = pd.read_csv("./csv/question_tag_validset.csv",index_col=0)
             
             train_data = datasets['validation'].to_pandas()
-            train_data['question']=train_data['question']+q_type_data['Q_tag']
+            train_data['question']=train_data['question']+' '+q_type_data['Q_tag']
             datasets['validation'] = datasets['validation'].from_pandas(train_data)
             print(datasets['validation']['question'][0])
             print("======================================= Tag complete============================")
@@ -154,7 +153,7 @@ def main():
             data_args,
         )
     elif data_args.eval_retrieval == "elastic_sparse":
-        datasets = run_elastic_sparse_retrieval(
+        datasets = elastic_search_sparse.run_elastic_sparse_retrieval(
             datasets,
             training_args,
             data_args,
@@ -460,7 +459,7 @@ def run_mrc(
 
     def compute_metrics(p: EvalPrediction) -> Dict:
         return metric.compute(predictions=p.predictions, references=p.label_ids)
-
+    
     print("init trainer...")
     # Trainer 초기화
     trainer = QuestionAnsweringTrainer(

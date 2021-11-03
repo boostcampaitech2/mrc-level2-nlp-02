@@ -125,7 +125,7 @@ def main():
             print(" "+"*"*50,"\n","*"*50,"\n","*"*50,"\n\n")
 
     # rtt 데이터셋이 존재할 경우 기존 데이터셋과 합칩니다.
-    if data_args.rtt_dataset_name != None:
+    if data_args.rtt_dataset_name != None and training_args.do_train:
         print(" "+"*"*50,"\n","*"*50,"\n","*"*50)
         print(" ***** rtt 데이터 병합 전 데이터 개수: ", len(datasets['train']),"******")
         rtt_data = pd.read_csv(data_args.rtt_dataset_name,index_col=0)

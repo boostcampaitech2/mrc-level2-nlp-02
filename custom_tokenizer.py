@@ -101,8 +101,7 @@ def add_special_tokens(tokenizer):
     tokenizer.add_special_tokens(speical_tokens)
 
 def save_customized_tokenizer(trainset, pretrained_model_name_or_path, data_selected,
-                              use_fast, tokenizer_name,add_special_tokens_flag
-                             ,add_special_tokens_query_flag):
+                              use_fast, tokenizer_name):
     tokenizer = AutoTokenizer.from_pretrained(pretrained_model_name_or_path, use_fast=use_fast)
     
     added_token_list = get_added_token(trainset, tokenizer, data_selected)

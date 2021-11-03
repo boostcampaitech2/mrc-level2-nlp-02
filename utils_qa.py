@@ -337,7 +337,6 @@ def last_postprocessing(context, answer_text, position, index):
     before_text=''
     after_text=''
     answer_text = context[position[index][0]:position[index][1]]
-    
     if len(context[:position[index][0]])>=20:
         before_text = context[position[index][0]-20:position[index][0]]
         if answer_text in before_text:
@@ -354,7 +353,7 @@ def last_postprocessing(context, answer_text, position, index):
             after_text = context[position[index][1]:after_text.find(answer_text)-len(answer_text)]
     
     else:
-        after_text = context[position[index][1],:]
+        after_text = context[position[index][1]:]
         if answer_text in after_text:
             after_text = context[position[index][1]:after_text.find(answer_text)-len(answer_text)]
     

@@ -15,4 +15,8 @@ models/**
 runs/**
 encoders/**
 retriever/__pycache__/
+retriever/encoders/**
+retriever/*.ipynb
 tokenizer/**
+ignore/
+Tuning/*

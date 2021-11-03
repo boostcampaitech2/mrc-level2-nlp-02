@@ -16,11 +16,11 @@ def load_pretrained_tokenizer(pretrained_model_name_or_path:str,
                         + ("c" if 'context'  in data_selected else "" ) \
                         + ("q" if 'question' in data_selected else "" ) \
                         + ("a" if 'answers'  in data_selected else "" )
-
+                        
+    print(tokenizer_name)
     if data_selected: #custom_flag=True인 경우 Custom_tokenizer 사용
         if not os.path.isdir(tokenizer_name):
-            save_customized_tokenizer(datasets['train'], pretrained_model_name_or_path, data_selected,
-                                      use_fast,tokenizer_name)
+            save_customized_tokenizer(datasets['train'], pretrained_model_name_or_path, data_selected, use_fast, tokenizer_name)
             print("make customized tokenizer!!!!!!!!!!!!")
         tokenizer =  AutoTokenizer.from_pretrained(tokenizer_name, use_fast=use_fast)
     else:
@@ -100,9 +100,7 @@ def get_added_token(trainset, tokenizer, data_selected):
 def add_special_tokens(tokenizer):
     tokenizer.add_special_tokens(speical_tokens)  
 
-def save_customized_tokenizer(trainset, pretrained_model_name_or_path, data_selected,
-                              use_fast, tokenizer_name,add_special_tokens_flag
-                             ,add_special_tokens_query_flag):
+def save_customized_tokenizer(trainset, pretrained_model_name_or_path, data_selected, use_fast, tokenizer_name):
     tokenizer = AutoTokenizer.from_pretrained(pretrained_model_name_or_path, use_fast=use_fast)
     
     added_token_list = get_added_token(trainset, tokenizer, data_selected)

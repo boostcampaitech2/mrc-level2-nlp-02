@@ -30,17 +30,13 @@ import random
 from transformers import is_torch_available, PreTrainedTokenizerFast, TrainingArguments
 from transformers.trainer_utils import get_last_checkpoint
 
-from konlpy.tag import Mecab
-
 from datasets import DatasetDict
 from arguments import (
     ModelArguments,
     DataTrainingArguments,
 )
 
-
 logger = logging.getLogger(__name__)
-
 
 def set_seed(seed: int = 42):
     """
@@ -221,12 +217,9 @@ def postprocess_qa_predictions(
 
         # offset을 사용하여 original context에서 answer text를 수집합니다.
         context = example["context"]
-        # position을 저장하는 list
-        position=[]
         for pred in predictions:
             offsets = pred.pop("offsets")
             pred["text"] = context[offsets[0] : offsets[1]]
-            position.append([offsets[0],offsets[1]])
 
         # rare edge case에는 null이 아닌 예측이 하나도 없으며 failure를 피하기 위해 fake prediction을 만듭니다.
         if len(predictions) == 0 or (
@@ -248,21 +241,12 @@ def postprocess_qa_predictions(
 
         # best prediction을 선택합니다.
         if not version_2_with_negative:
-            # 조사 제거 진행
-            ii=0
-            while predictions[ii]['text']==".":
-                ii+=1
-            if len(predictions[ii]["text"])>=2:
-                text = last_postprocessing(context, predictions[ii]['text'], position, ii)
-                all_predictions[example["id"]] = text
-            else:
-                all_predictions[example["id"]] = predictions[ii]["text"]
+            all_predictions[example["id"]] = predictions[0]["text"]
         else:
             # else case : 먼저 비어 있지 않은 최상의 예측을 찾아야 합니다
             i = 0
-            while predictions[i]["text"] == "" or predictions[i]["text"]==".":
+            while predictions[i]["text"] == "":
                 i += 1
-            
             best_non_null_pred = predictions[i]
 
             # threshold를 사용해서 null prediction을 비교합니다.
@@ -275,11 +259,7 @@ def postprocess_qa_predictions(
             if score_diff > null_score_diff_threshold:
                 all_predictions[example["id"]] = ""
             else:
-                if len(best_non_null_pred["text"])>=2:
-                    text = last_postprocessing(context, best_non_null_pred["text"], position, i)
-                    all_predictions[example["id"]] = text
-                else: 
-                    all_predictions[example["id"]] = best_non_null_pred["text"]
+                all_predictions[example["id"]] = best_non_null_pred["text"]
 
         # np.float를 다시 float로 casting -> `predictions`은 JSON-serializable 가능
         all_nbest_json[example["id"]] = [
@@ -332,66 +312,6 @@ def postprocess_qa_predictions(
                 )
 
     return all_predictions
-
-def last_postprocessing(context, answer_text, position, index):
-    before_text=''
-    after_text=''
-    answer_text = context[position[index][0]:position[index][1]]
-    
-    if len(context[:position[index][0]])>=20:
-        before_text = context[position[index][0]-20:position[index][0]]
-        if answer_text in before_text:
-            before_text = context[before_text.find(answer_text)+len(answer_text)+1:position[index][0]]
-    
-    else:
-        before_text = context[:position[index][0]]
-        if answer_text in before_text:
-            before_text = context[before_text.find(answer_text)+len(answer_text)+1:position[index][0]]
-    
-    if len(context[position[index][1]:])>=20:
-        after_text = context[position[index][1]:position[index][1]+20]
-        if answer_text in after_text:
-            after_text = context[position[index][1]:after_text.find(answer_text)-len(answer_text)]
-    
-    else:
-        after_text = context[position[index][1],:]
-        if answer_text in after_text:
-            after_text = context[position[index][1]:after_text.find(answer_text)-len(answer_text)]
-    
-    tmp_text = before_text + answer_text + after_text
-    an = ''.join(answer_text.split())
-    t=''
-    
-    mecab = Mecab()
-    
-    pos_tag = mecab.pos(tmp_text)
-    for iz in range(len(pos_tag)):
-        t+=pos_tag[iz][0]
-        if an in t:
-            idx=iz
-            break
-    
-    if pos_tag[idx][1] in {"JX", "JKB", "JKO", "JKS", "ETM", "VCP", "JC","VCP+EC"}:
-        count=0
-        for idx_char, char in enumerate(pos_tag[idx][0]):
-            count+=1
-            if pos_tag[idx][0][idx_char]==an[-1]:
-                break
-        
-        # special case
-        if pos_tag[idx][1] in "JKB" and (pos_tag[idx][0]=="로" or pos_tag[idx][0]=="에"):
-            answer_text = answer_text
-        elif pos_tag[idx][1] in "JX" and pos_tag[idx][0]=="야":
-            answer_text = answer_text
-        else:
-            answer_text = answer_text[:len(answer_text)-count]
-    
-    if answer_text[-1]=='(':
-        answer_text = answer_text[:-1]
-    
-    return answer_text
-    
-    
 
 
 def check_no_error(

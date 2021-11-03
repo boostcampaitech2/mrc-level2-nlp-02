@@ -34,7 +34,7 @@ from transformers import (
     set_seed,
 )
 
-from utils_qa import postprocess_qa_predictions, check_no_error
+from utils_qa_ys import postprocess_qa_predictions, check_no_error
 from trainer_qa import QuestionAnsweringTrainer
 
 from retriever.rt_bm25 import SparseRetrieval
@@ -107,7 +107,7 @@ def main():
     
     #데이터셋을 불러옵니다.
     datasets = load_from_disk(data_args.dataset_name)
-
+    print(datasets)
     # cache 파일을 정리합니다.
     datasets.cleanup_cache_files()
     
@@ -128,10 +128,9 @@ def main():
             datasets['validation'] = datasets['validation'].from_pandas(train_data)
             print(datasets['validation']['question'][0])
             print("======================================= Tag complete============================")
+        datasets = Preprocessor.preprocessing(data = datasets, pt_num=data_args.preprocessing_pattern)
 
-    datasets = Preprocessor.preprocessing(data = datasets, pt_num=data_args.preprocessing_pattern)
     print(datasets)
-
     # AutoConfig를 이용하여 pretrained model 과 tokenizer를 불러옵니다.
     # argument로 원하는 모델 이름을 설정하면 옵션을 바꿀 수 있습니다.
     config = AutoConfig.from_pretrained(model_args.model_name_or_path)
@@ -139,6 +138,7 @@ def main():
         model_args.model_name_or_path,
         use_fast=True,
     )
+    print('Size of Tokenizer : %d' %len(tokenizer))
 
     model = AutoModelForQuestionAnswering.from_pretrained(
         model_args.model_name_or_path,

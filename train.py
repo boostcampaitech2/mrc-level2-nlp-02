@@ -167,14 +167,6 @@ def main():
     #     # False로 설정할 경우 python으로 구현된 tokenizer를 사용할 수 있으며,
     #     # rust version이 비교적 속도가 빠릅니다.
     
-    tokenizer = load_pretrained_tokenizer(
-        pretrained_model_name_or_path = model_args.model_name_or_path,
-        data_selected = data_args.data_selected,
-        datasets=datasets,
-        add_special_tokens_flag = data_args.add_special_tokens_flag,
-        use_fast=True)
-    print("\n","num of added vocab in tokenizer : ", len(tokenizer.vocab) - config.vocab_size)
-
     model = AutoModelForQuestionAnswering.from_pretrained(
         model_args.model_name_or_path,
         from_tf=bool(".ckpt" in model_args.model_name_or_path), # Load the model weights from a TensorFlow checkpoint save file
@@ -191,10 +183,10 @@ def main():
         
     # #기본 전처리를 진행합니다.
     print(data_args.preprocessing_pattern)
-    print("\n","전처리 전: \n",datasets['train']['context'][0])
+    print("\n","전처리 전: \n",datasets['train'][0])
     if data_args.preprocessing_pattern != None:
         datasets = Preprocessor.preprocessing(data = datasets, pt_num = data_args.preprocessing_pattern)
-        print("\n","전처리 후: \n",datasets['train']['context'][0])
+        print("\n","전처리 후: \n",datasets['train'][0])
     
     if data_args.train_retrieval == True :
         print('Retrieve Using Train Data')
@@ -205,11 +197,12 @@ def main():
             add_special_tokens_flag=data_args.add_special_tokens_flag
         )
 
+        # 수정 부분
         retriever.get_sparse_BM25()
         train_data = datasets['train'] 
-        train_data = retriever.retrieve_train_BM25(dataset=train_data, topk=2, rtt_name=data_args.rtt_dataset_name)
+        train_data = retriever.retrieve_train_BM25(dataset=train_data, topk=3, rtt_name=data_args.rtt_dataset_name)
         datasets['train'] = train_data
-        print("\n","Retrieved 이후 : \n", datasets['train']['context'][0])
+        print("\n","Retrieved 이후 : \n", datasets['train'][0])
 
     print(
         type(training_args),

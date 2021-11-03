@@ -108,7 +108,7 @@ class SparseRetrieval:
 
         # Pickle을 저장 "0123"
         pt_num_sorted = "".join(sorted(self.pt_num)) if self.pt_num else "raw"
-        pickle_name = f"BM25_embedding_{pt_num_sorted}_BM25L.bin"
+        pickle_name = f"BM25_embedding_{pt_num_sorted}.bin"
         bm_emd_path = os.path.join(self.data_path, pickle_name)
 
         # BM25 존재하면 가져오기
@@ -123,7 +123,7 @@ class SparseRetrieval:
             print("Build passage BM25_class_instant")
             # BM25는 어떤 text 전처리 X ->  BM25 클래스의 인스턴스를 생성
             tokenized_contexts = [self.tokenizer(i) for i in tqdm(self.contexts)]
-            self.BM25 = BM25L(tokenized_contexts)
+            self.BM25 = BM25Plus(tokenized_contexts)
             with open(bm_emd_path, "wb") as file:
                 pickle.dump(self.BM25, file)
             print("BM25_class_instant pickle saved.")
@@ -147,10 +147,24 @@ class SparseRetrieval:
             total = []
             print('Make Retrieval Pandas Data')
             with timer("query exhaustive search"):
-                doc_scores, doc_indices = self.get_relevant_train_bulk_BM25(dataset, k=topk, )
+                doc_scores, doc_indices, doc_rank = self.get_relevant_train_bulk_BM25(dataset, k=topk, )
+
             for idx, example in enumerate(
                 tqdm(dataset, desc="BM25 retrieval: ")
             ):
+
+                gap_size = 9 if self.add_special_tokens_flag == True else 1
+
+                doc_start = 0
+                if doc_rank[idx] > 0 :
+                    for i in range(doc_rank[idx]) :
+                        doc_id = doc_indices[idx][i]
+                        doc_context = self.contexts[doc_id]
+                        doc_start += (len(doc_context) + gap_size)
+
+                    answer = example['answers']
+                    answer_start, answer_text = answer['answer_start'][0], answer['text'][0]
+                    example['answers'] = {'answer_start' : [doc_start + answer_start], 'text' : [answer_text]}       
 
                 split_string = " [SPLIT] " if self.add_special_tokens_flag else " "
 
@@ -203,31 +217,36 @@ class SparseRetrieval:
         tokenized_queries= [self.tokenizer(i) for i in queries]        
         doc_scores = []
         doc_indices = []
+        doc_ranks = []
+
         for i in tqdm(range(data_size)):
             scores = self.BM25.get_scores(tokenized_queries[i])
             context_txt = contexts[i]
             sorted_score = np.sort(scores)[::-1]
             sorted_id = np.argsort(scores)[::-1]
             
-            org_rank = self.contexts.index(context_txt)
+            selected_scores = []
+            selected_indices = []
 
-            selected_scores = [0]
-            selected_indices = [org_rank]
-            j = 1
-            size = 1
-            while(size < k) :
-                doc_id = sorted_id[j]
-                doc_score = sorted_score[j]
+            org_id = self.contexts.index(context_txt)
 
-                if doc_id != org_rank :
-                    selected_scores.append(doc_score)
-                    selected_indices.append(doc_id)
-                    size += 1
+            j = 0
+            while(j < k) :
+                selected_scores.append(sorted_score[j])
+                selected_indices.append(sorted_id[j])
                 j += 1
+
+            if org_id not in selected_indices :
+                doc_ranks.append(j)
+                selected_scores.append(0)
+                selected_indices.append(org_id)
+            else :
+                org_rank = selected_indices.index(org_id)
+                doc_ranks.append(org_rank)
 
             doc_scores.append(selected_scores)
             doc_indices.append(selected_indices)
-        return doc_scores, doc_indices
+        return doc_scores, doc_indices, doc_ranks
     
 
     def retrieve_BM25(
@@ -344,7 +363,6 @@ class SparseRetrieval:
         doc_indices = []
         for i in tqdm(tokenized_queries):
             scores = self.BM25.get_scores(i)
-            boundary = []
             sorted_score = np.sort(scores)[::-1]
             sorted_id = np.argsort(scores)[::-1]
             boundary = []

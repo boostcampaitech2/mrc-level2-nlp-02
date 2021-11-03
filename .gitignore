@@ -19,3 +19,4 @@ retriever/__pycache__/
 retriever/encoders/**
 retriever/*.ipynb
 tokenizer/**
+ignore/

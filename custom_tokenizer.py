@@ -7,14 +7,16 @@ import re
 speical_tokens = {'additional_special_tokens': ['[CHN]']}
 
 def load_pretrained_tokenizer(pretrained_model_name_or_path:str,
-                              tokenizer_name:str,
-                              custom_flag:bool=False,
                               data_selected:str= None,
                               datasets=False,
                               add_special_tokens_flag=False,
                               use_fast=True):
     
-    if custom_flag: #custom_flag=True인 경우 Custom_tokenizer 사용
+    if data_selected: #custom_flag=True인 경우 Custom_tokenizer 사용
+        tokenizer_name = "tokenizer/custom_" \
+                        + ("c" if 'context'  in data_selected else "" ) \
+                        + ("q" if 'question' in data_selected else "" ) \
+                        + ("a" if 'answers'  in data_selected else "" )
         if not os.path.isdir(tokenizer_name):
             save_customized_tokenizer(datasets['train'], pretrained_model_name_or_path, data_selected,
                                       use_fast,tokenizer_name,add_special_tokens_flag)

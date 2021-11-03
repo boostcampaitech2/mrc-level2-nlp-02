@@ -40,7 +40,6 @@ from trainer_qa import QuestionAnsweringTrainer
 
 from retriever.rt_bm25 import SparseRetrieval
 from retriever.elastic_search import run_elastic_sparse_retrieval
-from retriever.retriever_dense import DenseRetrieval
 
 from arguments import (
     ModelArguments,
@@ -142,10 +141,6 @@ def main():
             datasets,
             training_args,
             data_args,
-        )
-    elif data_args.eval_retrieval == "dense":
-        datasets = run_dense_retrieval(
-            "klue/bert-base", datasets, training_args, data_args
         )
     
     if data_args.re_rank == True:
@@ -270,66 +265,6 @@ def load_rerank_model(p_encoder, q_encoder):
     print("finish load model state dict !!!")
 
     return p_encoder, q_encoder
-
-
-def run_dense_retrieval(
-    model_checkpoint: str,
-    datasets: DatasetDict,
-    training_args: TrainingArguments,
-    data_args: DataTrainingArguments,
-):
-    dense_tokenizer = AutoTokenizer.from_pretrained(model_checkpoint)
-    p_encoder = BertEncoder.from_pretrained(model_checkpoint).to(training_args.device)
-    q_encoder = BertEncoder.from_pretrained(model_checkpoint).to(training_args.device)
-    if data_args.num_neg != 0:
-        print("change batch size default(8) to 2 !!!")
-        training_args.per_device_train_batch_size = 2
-    retriever = DenseRetrieval(
-        training_args,
-        data_path="/opt/ml/data/train_dataset",
-        num_neg=data_args.num_neg,
-        tokenizer=dense_tokenizer,
-        p_encoder=p_encoder,
-        q_encoder=q_encoder,
-        save_dir="./encoders",
-    )
-
-    retriever.load_encoder()
-    df = retriever.retrieve(
-        datasets["validation"],
-        "/opt/ml/data/wiki_embedding.csv",
-        topk=data_args.top_k_retrieval,
-    )
-
-    # test data 에 대해선 정답이 없으므로 id question context 로만 데이터셋이 구성됩니다.
-    if training_args.do_predict:
-        f = Features(
-            {
-                "context": Value(dtype="string", id=None),
-                "id": Value(dtype="string", id=None),
-                "question": Value(dtype="string", id=None),
-            }
-        )
-
-    # train data 에 대해선 정답이 존재하므로 id question context answer 로 데이터셋이 구성됩니다.
-    elif training_args.do_eval:
-        f = Features(
-            {
-                "answers": Sequence(
-                    feature={
-                        "text": Value(dtype="string", id=None),
-                        "answer_start": Value(dtype="int32", id=None),
-                    },
-                    length=-1,
-                    id=None,
-                ),
-                "context": Value(dtype="string", id=None),
-                "id": Value(dtype="string", id=None),
-                "question": Value(dtype="string", id=None),
-            }
-        )
-    datasets = DatasetDict({"validation": Dataset.from_pandas(df, features=f)})
-    return datasets
 
 
 def run_sparse_retrieval(

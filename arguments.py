@@ -113,7 +113,7 @@ class DataTrainingArguments:
         metadata={"help": "Whether to train sparse/dense embedding (prepare for retrieval)."},
     )
     data_selected: str = field(
-        default="context",
+        default=None,
         metadata={"help": "data to find added tokens, context/answers/question with '_' e.g.) context_answers"},
     )
     rtt_dataset_name:str = field(

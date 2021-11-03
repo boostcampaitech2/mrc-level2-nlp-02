@@ -19,7 +19,6 @@ from transformers import (
 
 from utils_qa import postprocess_qa_predictions, check_no_error
 from trainer_qa import QuestionAnsweringTrainer
-from retriever.retriever_dense import DenseRetrieval
 
 from arguments import (
     ModelArguments,
@@ -50,8 +49,8 @@ def main():
 
     wandb.init(
         entity="klue-level2-nlp-02",
-        project="mrc_project_Rerank",
-        name=log_args.wandb_name + "_train/train" if training_args.do_train==True else "_train/eval",
+        project=log_args.project_name,
+        name=log_args.wandb_name + "_train/train" if training_args.do_train==True else log_args.wandb_name + "_train/eval",
         group=model_args.model_name_or_path,
     )
     wandb.config.update(training_args)
@@ -93,8 +92,6 @@ def main():
     
     tokenizer = load_pretrained_tokenizer(
             pretrained_model_name_or_path = model_args.model_name_or_path,
-            tokenizer_name = model_args.tokenizer_name,
-            custom_flag = model_args.customized_tokenizer_flag,
             data_selected = data_args.data_selected,
             datasets=datasets,
             add_special_tokens_flag = data_args.add_special_tokens_flag,

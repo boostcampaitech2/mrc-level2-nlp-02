@@ -344,31 +344,8 @@ class SparseRetrieval:
             vocab 에 없는 이상한 단어로 query 하는 경우 assertion 발생 (예) 뙣뙇?
         """
         print("Build BM25 score, indices")
-        stopword = []
-        with open('StopwordInQuestion.txt', "r", encoding="utf-8") as f:
-            for _, line in enumerate(f) :
-                if line.startswith('#') :
-                    continue
-                stopword.append(eval(line.split(',')[0]))
-        new_queries = query_or_dataset['question']
-        new_queries  = []
-        for q in query_or_dataset['question'] :
-
-            q_token = q.split(' ')
-            if '[' in q_token[-1]:
-                q = ' '.join(q_token[:-1])
-            
-            rem_QM = ''
-            if q[-1] == '?' :
-                rem_QM = q[:-1]
-
-            rem_QM_token = rem_QM.split(' ')
-            if rem_QM_token[-1] in stopword :
-                new_queries.append(' '.join(rem_QM_token[:-1]))
-            else :
-                new_queries.append(rem_QM)
-
-        tokenized_queries= [self.tokenizer(i) for i in new_queries] 
+        query = query_or_dataset['question']
+        tokenized_queries= [self.tokenizer(i) for i in query] 
         doc_scores = []
         doc_indices = []
         for i in tqdm(tokenized_queries):

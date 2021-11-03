@@ -60,7 +60,6 @@ def main():
     # [참고] argument를 manual하게 수정하고 싶은 경우에 아래와 같은 방식을 사용할 수 있습니다
     # training_args.per_device_train_batch_size = 4
     # print(training_args.per_device_train_batch_size)
-    training_args.num_train_epochs=1
 
     print(f"model is from {model_args.model_name_or_path}")
     print(f"data is from {data_args.dataset_name}")
@@ -157,23 +156,6 @@ def main():
         datasets['train'] = train_data
         print('증가하고 난 이후의 데이터 수 : %d' %len(datasets['train']))
     print(datasets)
-
-    # AutoConfig를 이용하여 pretrained model 과 tokenizer를 불러옵니다.
-    # argument로 원하는 모델 이름을 설정하면 옵션을 바꿀 수 있습니다.
-    config = AutoConfig.from_pretrained(
-        model_args.model_name_or_path)
-    print(config)
-    #     # 'use_fast' argument를 True로 설정할 경우 rust로 구현된 tokenizer를 사용할 수 있습니다.
-    #     # False로 설정할 경우 python으로 구현된 tokenizer를 사용할 수 있으며,
-    #     # rust version이 비교적 속도가 빠릅니다.
-    
-    tokenizer = load_pretrained_tokenizer(
-        pretrained_model_name_or_path = model_args.model_name_or_path,
-        data_selected = data_args.data_selected,
-        datasets=datasets,
-        add_special_tokens_flag = data_args.add_special_tokens_flag,
-        use_fast=True)
-    print("\n","num of added vocab in tokenizer : ", len(tokenizer.vocab) - config.vocab_size)
 
     model = AutoModelForQuestionAnswering.from_pretrained(
         model_args.model_name_or_path,

@@ -10,7 +10,6 @@ from glob import glob
 import torch
 
 import numpy as np
-import torch
 from tqdm.auto import tqdm
 
 from datasets import (
@@ -37,8 +36,8 @@ from utils_qa import postprocess_qa_predictions, check_no_error
 from trainer_qa import QuestionAnsweringTrainer
 
 from retriever.rt_bm25 import SparseRetrieval
-from retriever import elastic_search_sparse
-from retriever.elastic_search import run_elastic_sparse_retrieval, run_elastic_dense_retrieval
+from retriever.rt_ES_sparse import run_elastic_sparse_retrieval
+from retriever.elastic_search import run_elastic_dense_retrieval
 
 from arguments import (
     ModelArguments,
@@ -129,7 +128,7 @@ def main():
             print(datasets['validation']['question'][0])
             print("======================================= Tag complete============================")
 
-    datasets = Preprocessor.preprocessing(data = datasets, pt_num=data_args.preprocessing_pattern)
+        datasets = Preprocessor.preprocessing(data = datasets, pt_num=data_args.preprocessing_pattern)
     print(datasets)
 
     # AutoConfig를 이용하여 pretrained model 과 tokenizer를 불러옵니다.
@@ -154,7 +153,7 @@ def main():
             data_args,
         )
     elif data_args.eval_retrieval == "elastic_sparse":
-        datasets = elastic_search_sparse.run_elastic_sparse_retrieval(
+        datasets = run_elastic_sparse_retrieval(
             datasets,
             training_args,
             data_args,

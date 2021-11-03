@@ -1,6 +1,7 @@
 import logging
 import os
 import sys
+import torch
 import pandas as pd
 
 from typing import List, Callable, NoReturn, NewType, Any
@@ -18,7 +19,8 @@ from transformers import (
 
 from utils_qa import postprocess_qa_predictions, check_no_error
 from trainer_qa import QuestionAnsweringTrainer
-from retriever.retriever_dense import DenseRetrieval
+from retriever.rt_bm25 import SparseRetrieval
+from augmentation import SpanAugmentation
 
 from arguments import (
     ModelArguments,
@@ -30,7 +32,6 @@ from custom_tokenizer import load_pretrained_tokenizer
 from dotenv import load_dotenv
 from preprocessor import Preprocessor
 from sklearn.model_selection import KFold
-
 import wandb
 
 logger = logging.getLogger(__name__)
@@ -52,7 +53,7 @@ def main():
     wandb.init(
         entity="klue-level2-nlp-02",
         project=log_args.project_name,
-        name=log_args.wandb_name,
+        nname=log_args.wandb_name + "_train/train" if training_args.do_train==True else log_args.wandb_name + "_train/eval",
         group=model_args.model_name_or_path,
     )
     wandb.config.update(training_args)
@@ -77,6 +78,9 @@ def main():
 
     # 모델을 초기화하기 전에 난수를 고정합니다.
     set_seed(training_args.seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
     # 데이터셋을 불러옵니다.
     datasets = load_from_disk(data_args.dataset_name)
 
@@ -97,12 +101,10 @@ def main():
     #     # rust version이 비교적 속도가 빠릅니다.
     
     tokenizer = load_pretrained_tokenizer(
-            pretrained_model_name_or_path = model_path,
-            tokenizer_name = model_args.tokenizer_name,
-            custom_flag = model_args.customized_tokenizer_flag,
+            pretrained_model_name_or_path = model_args.model_name_or_path,
             data_selected = data_args.data_selected,
             datasets=datasets,
-            add_special_tokens_flag = data_args.add_special_tokens_flag,
+            add_special_tokens_flag = data_args.add_special_tokens_flag or data_args.add_special_tokens_query_flag,
             use_fast=True)
     
     print("\n","num of added vocab in tokenizer : ", len(tokenizer.vocab) - config.vocab_size)
@@ -147,6 +149,18 @@ def main():
         print(" "+"*"*50,"\n","*"*50,"\n","*"*50,"\n\n")
     print(datasets)
 
+    # Span Augmentation을 적용합니다.
+    if data_args.pretrain_span_augmentation == True :
+        print('Span Augmentation을 이용해서 데이터를 증가')
+        print('증가하기 이전에 데이터 수 : %d' %len(datasets['train']))
+        span_augmentation = SpanAugmentation()
+        train_data = datasets['train']
+        train_data = span_augmentation(train_data)
+
+        datasets['train'] = train_data
+        print('증가하고 난 이후의 데이터 수 : %d' %len(datasets['train']))
+    print(datasets)
+    
     model = AutoModelForQuestionAnswering.from_pretrained(
         model_path,
         from_tf=bool(".ckpt" in model_path), # Load the model weights from a TensorFlow checkpoint save file

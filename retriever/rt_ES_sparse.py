@@ -126,29 +126,12 @@ def run_elastic_sparse_retrieval(
     print(es.indices.analyze(
             index=index_name, body={"analyzer": "nori_analyzer", "text": "동해물과 백두산이"})
     )
-        
-    stopword = []
-    with open('StopwordInQuestion', "r", encoding="utf-8") as f:
-        for _, line in enumerate(f) :
-            if line.startswith('#') :
-                continue
-            stopword.append(eval(line.split(',')[0]))
-
+    
     total = []
     exact_count = 0
     for example in tqdm(datasets["validation"]):
-        q = example["question"]
-        q_token = q.split(' ')
-        if '[' in q_token[-1]:
-            q = ' '.join(q_token[:-1])
-        rem_QM = ''
-        if q[-1] == '?' :
-            rem_QM = q[:-1]
-        rem_QM_token = rem_QM.split(' ')
-        if rem_QM_token[-1] in stopword :
-            rem_QM = ' '.join(rem_QM_token[:-1])
         relevent_context = search_with_elastic(
-            es, rem_QM, index_name, data_args
+            es, example["question"], index_name, data_args
         )
         tmp = {
             "question": example["question"],

@@ -36,7 +36,7 @@ from utils_qa import postprocess_qa_predictions, check_no_error
 from trainer_qa import QuestionAnsweringTrainer
 
 from retriever.retriever_sparse_BM25 import SparseRetrieval
-from retriever.elastic_search import run_elastic_sparse_retrieval, run_elastic_sparse_retrieval
+from retriever.elastic_search import run_elastic_sparse_retrieval, run_elastic_dense_retrieval
 from retriever.retriever_dense import DenseRetrieval
 
 from arguments import (
@@ -139,7 +139,7 @@ def main():
             data_args,
         )
     elif data_args.eval_retrieval == "elastic_dense":
-        datasets = run_elastic_sparse_retrieval(
+        datasets = run_elastic_dense_retrieval(
             datasets,
             training_args,
             data_args,

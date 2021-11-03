@@ -15,7 +15,7 @@ from arguments import (
     ModelArguments,
     DataTrainingArguments,
 )
-import model_encoder
+from retriever import model_encoder
 
 
 def create_elastic_object() -> Elasticsearch:
@@ -86,8 +86,8 @@ def select_ESconfig(filtpath: str) -> str:
 
 def dense_embedding(df: DataFrame)-> List:
     tokenizer = AutoTokenizer.from_pretrained('klue/bert-base')
-    p_encoder_sen = model_encoder.RobertaEncoder.from_pretrained('../encoders/p_encoder_neg_sen').to('cuda')
-    p_encoder_bert = model_encoder.BertEncoder.from_pretrained('../encoders/p_encoder').to('cuda')
+    p_encoder_sen = model_encoder.RobertaEncoder.from_pretrained('encoders/p_encoder_neg_sen').to('cuda')
+    p_encoder_bert = model_encoder.BertEncoder.from_pretrained('encoders/p_encoder').to('cuda')
     p_embs_sen = []
     p_embs_bert = []
     for index, document in tqdm(df.iterrows()):
@@ -217,7 +217,6 @@ def run_elastic_dense_retrieval(
     q_encoder_bert = model_encoder.BertEncoder.from_pretrained('encoders/q_encoder').to('cuda') 
 
     tokenizer = AutoTokenizer.from_pretrained('klue/bert-base')
-
 
     total = []
     exact_count = 0

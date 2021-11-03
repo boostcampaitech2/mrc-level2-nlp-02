@@ -154,7 +154,10 @@ class DataTrainingArguments:
         default=False,
         metadata={"help": "add special tokens about question type"},
     )
-
+    retrieve_pickle: str = field(
+        default='',
+        metadata={"help":"put a pickle file path for load"},
+    )
 @dataclass
 class LoggingArguments:
     """

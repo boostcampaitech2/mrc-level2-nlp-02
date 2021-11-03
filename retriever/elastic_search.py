@@ -4,6 +4,7 @@ import elasticsearch
 from elasticsearch import Elasticsearch, helpers
 import pandas as pd
 from datasets import DatasetDict, Dataset
+from pandas.core.frame import DataFrame
 import torch
 from tqdm import tqdm
 from transformers import TrainingArguments, AutoModel, AutoTokenizer
@@ -14,6 +15,7 @@ from arguments import (
     ModelArguments,
     DataTrainingArguments,
 )
+import model_encoder
 
 
 def create_elastic_object() -> Elasticsearch:
@@ -40,6 +42,19 @@ def generator(df):
         }
     raise StopIteration
 
+def generator_dense(text, title, document_id, p_embs_sen, p_embs_bert):
+    for text_el, title_el, document_id_el, p_emb_sen, p_emb_bert in zip(text,title,document_id, p_embs_sen, p_embs_bert):
+        yield {
+        '_index': 'wiki_documents_dense',
+        '_type': '_doc',
+        '_id': document_id_el,
+        '_source': {
+            'text': text_el,
+            'vector_sen': p_emb_sen,
+            'vector_bert': p_emb_bert
+            }
+        }
+    raise StopIteration
 
 def select_ESconfig(filtpath: str) -> str:
     """[summary]
@@ -69,6 +84,24 @@ def select_ESconfig(filtpath: str) -> str:
     ESconfig = re.sub("\\|\n|  ", "", lines)
     return ESconfig
 
+def dense_embedding(df: DataFrame)-> List:
+    tokenizer = AutoTokenizer.from_pretrained('klue/bert-base')
+    p_encoder_sen = model_encoder.RobertaEncoder.from_pretrained('../encoders/p_encoder_neg_sen').to('cuda')
+    p_encoder_bert = model_encoder.BertEncoder.from_pretrained('../encoders/p_encoder').to('cuda')
+    p_embs_sen = []
+    p_embs_bert = []
+    for index, document in tqdm(df.iterrows()):
+        with torch.no_grad():
+            p_encoder_sen.eval()
+            p_encoder_bert.eval()
+            p_val_sen = tokenizer([document['text']], padding="max_length", truncation=True, return_tensors='pt', max_length=510, return_token_type_ids=False).to('cuda')
+            p_val_bert = tokenizer([document['text']], padding="max_length", truncation=True, return_tensors='pt').to('cuda')
+            p_emb_sen = p_encoder_sen(**p_val_sen)
+            p_emb_bert = p_encoder_bert(**p_val_bert)
+            
+            p_embs_sen.append(p_emb_sen[0].cpu().detach().numpy().tolist())
+            p_embs_bert.append(p_emb_bert[0].cpu().detach().numpy().tolist())
+    return p_embs_sen, p_embs_bert
 
 def prepare_config(es, docs_config, index_name, args):
 
@@ -82,14 +115,35 @@ def prepare_config(es, docs_config, index_name, args):
 
         df = pd.read_json("/opt/ml/data/wikipedia_documents.json").T
         df = df.drop_duplicates(subset=["text"])
-        df = df.to_dict("records")
+        
 
-        gen = generator(df[: 100 * (len(df) // 100)])
+        if args.eval_retrieval == "elastic_dense":
+            p_embs_sen, p_embs_bert = dense_embedding(df)
+            text = df['text'].to_list()
+            title = df['title'].to_list()
+            document_id = df['document_id'].to_list()
+            gen = generator_dense(text[: 100 * (len(df) // 100)], 
+                                title[: 100 * (len(df) // 100)], 
+                                document_id[: 100 * (len(df) // 100)], 
+                                p_embs_sen[: 100 * (len(df) // 100)], 
+                                p_embs_bert[: 100 * (len(df) // 100)])
+        else:
+            df = df.to_dict("records")
+            gen = generator(df[: 100 * (len(df) // 100)])
+
         try:
             helpers.bulk(es, gen, chunk_size=100)
         except Exception as e:
             print("Done")
-        gen = generator(df[100 * (len(df) // 100) :])
+        
+        if args.eval_retrieval == "elastic_dense":
+            gen = generator_dense(text[100 * (len(df) // 100) :], 
+                                title[100 * (len(df) // 100) :], 
+                                document_id[100 * (len(df) // 100) :], 
+                                p_embs_sen[100 * (len(df) // 100) :], 
+                                p_embs_bert[100 * (len(df) // 100) :])
+        else:
+            gen = generator(df[100 * (len(df) // 100) :])
         try:
             helpers.bulk(es, gen, chunk_size=1)
         except Exception as e:
@@ -145,17 +199,155 @@ def run_elastic_sparse_retrieval(
     datasets = DatasetDict({"validation": Dataset.from_pandas(df)})
     return datasets
 
+def run_elastic_dense_retrieval(
+    datasets: DatasetDict,
+    training_args: TrainingArguments,
+    data_args: DataTrainingArguments,
+) -> DatasetDict:
+
+    index_name = "wiki_documents_dense"
+    
+    es = create_elastic_object()
+    if data_args.reconfig:
+        config = eval(select_ESconfig("./retriever/ElasticSearchConfig"))
+        print("Start create index")
+        es = prepare_config(es, config, index_name, data_args)
+    
+    q_encoder_sen = model_encoder.RobertaEncoder.from_pretrained('encoders/q_encoder_neg_sen').to('cuda') 
+    q_encoder_bert = model_encoder.BertEncoder.from_pretrained('encoders/q_encoder').to('cuda') 
+
+    tokenizer = AutoTokenizer.from_pretrained('klue/bert-base')
+
+
+    total = []
+    exact_count = 0
+    for example in tqdm(datasets["validation"]):
+        relevent_context = search_with_elastic(
+            es, example["question"], index_name, data_args, q_encoder_sen, q_encoder_bert, tokenizer
+        )
+
+        tmp = {
+            "question": example["question"],
+            "id": example["id"],
+            "context": relevent_context,
+        }
+        if "context" in example.keys() and "answers" in example.keys():
+            # validation 데이터를 사용하면 ground_truth context와 answer도 반환합니다.
+            tmp["original_context"] = example["context"]
+            tmp["answers"] = example["answers"]
+            if example["context"] in relevent_context:
+                exact_count += 1
+        total.append(tmp)
+
+    Total_count = len(datasets["validation"])
+    print(f"**** Accuracy: {exact_count / Total_count * 100:.3f}")
+    print(f"**** Correct count: {exact_count}")
+    df = pd.DataFrame(total)
+    datasets = DatasetDict({"validation": Dataset.from_pandas(df)})
+    return datasets
+
 
 def search_with_elastic(
     es: Elasticsearch,
     question: dict,
     index_name: str,
     data_args: DataTrainingArguments,
-    q_encoder: Optional[AutoModel] = None,
+    q_encoder_sen: Optional[AutoModel] = None,
+    q_encoder_bert: Optional[AutoModel] = None,
     tokenizer: Optional[AutoTokenizer] = None,
 ) -> str:
+    if data_args.eval_retrieval == "elastic_dense":
+        with torch.no_grad():
+            q_encoder_sen.eval()
+            q_encoder_bert.eval()
+            q_tokenized = tokenizer([question], padding="max_length", truncation=True, return_tensors='pt', max_length=510, return_token_type_ids=False).to('cuda')
+            q_emb_sen = q_encoder_sen(**q_tokenized)
+            q_emb_bert = q_encoder_bert(**q_tokenized)
+            q_output_sen = q_emb_sen[0].cpu().detach().numpy().tolist()
+            q_output_bert = q_emb_bert[0].cpu().detach().numpy().tolist()
+        pre_query = es.search(
+            index=index_name, 
+            body={
+                'query':{
+                    'match':{
+                        'text':question,
+                    }
+                }
+            },
+            size=1
+        )
 
-    query = {"query": {"match": {"text": question}}}
+        pre_query_sen = es.search(
+            index=index_name,
+            body={
+                'query':{
+                    "script_score": {
+                        "query" : {
+                            "match" : {
+                                "text": question
+                            }
+                        },
+                        "script": {
+                            "source": "cosineSimilarity(params.queryVector_sen, doc['vector_sen']) + 1.0",
+                            "params": {
+                                "queryVector_sen": q_output_sen,
+                            }
+                        }
+                    }
+                }
+            },
+            size= 1
+        )
+
+        pre_query_bert = es.search(
+            index=index_name,
+            body={
+                'query':{
+                    "script_score": {
+                        "query" : {
+                            "match" : {
+                                "text": question
+                            }
+                        },
+                        "script": {
+                            "source": "cosineSimilarity(params.queryVector_bert, doc['vector_bert']) + 1.0",
+                            "params": {
+                                "queryVector_bert": q_output_bert,
+                            }
+                        }
+                    }
+                }
+            },
+            size= 1
+        )
+
+        max_bm_score=pre_query['hits']['hits'][0]['_score']
+        max_sen_score=pre_query_sen['hits']['hits'][0]['_score']
+        max_bert_score=pre_query_bert['hits']['hits'][0]['_score']
+            
+        query = {
+            'query':{
+                "script_score": {
+                    "query" : {
+                        "match" : {
+                            "text": question
+                        },
+                    },
+                    "script": {
+                        "source": "_score/params.max_bm_score + (cosineSimilarity(params.queryVector_sen, doc['vector_sen'])+1.0)/params.max_sen_score + (cosineSimilarity(params.queryVector_bert, doc['vector_bert'])+1.0)/params.max_bert_score",
+                        "params": {
+                            "queryVector_sen": q_output_sen,
+                            "queryVector_bert": q_output_bert,
+                            "max_bm_score": max_bm_score,
+                            "max_sen_score": max_sen_score,
+                            "max_bert_score": max_bert_score,
+                        }
+                    }
+                }
+            }
+        }
+    else:
+        query = {"query": {"match": {"text": question}}}
     res = es.search(index=index_name, body=query, size=data_args.top_k_retrieval)
 
     relevent_contexts = ""

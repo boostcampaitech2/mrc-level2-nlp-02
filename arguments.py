@@ -141,6 +141,14 @@ class DataTrainingArguments:
         default=None,
         metadata={"help":"Dense retriever path (The dir contains only one p/q encoder each)"},
     )
+    retrieve_pickle: str = field(
+        default=None,
+        metadata={"help":"put a pickle file path for load"},
+    )
+    bm25_type: str = field(
+        default='',
+        metadata={"help":" BM25Okapi or BM25L(Default: BM25Plus)"},
+    )
 
 @dataclass
 class LoggingArguments:

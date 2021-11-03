@@ -149,6 +149,7 @@ def main():
         from_tf=bool(".ckpt" in model_args.model_name_or_path),
         config=config,
     )
+    output_dir = training_args.output_dir
     try :
         if '0' in os.listdir(model_args.model_name_or_path) and '1' in os.listdir(model_args.model_name_or_path) :
             model_path_list = os.listdir(model_args.model_name_or_path)
@@ -267,12 +268,12 @@ def run_sparse_retrieval(
     # retriever 설정
     retriever = retriever_sparse_BM25.SparseRetrieval(
         tokenize_fn=tokenize_fn, data_path=data_path, context_path=context_path,
-        pt_num=data_args.preprocessing_pattern
+        pt_num=data_args.preprocessing_pattern, bm25_type=data_args.bm25_type
     )
     
     # Passage Embedding 만들기
     retriever.get_sparse_BM25()
-    df = retriever.retrieve_BM25(datasets['validation'], topk=data_args.top_k_retrieval, score_ratio=data_args.score_ratio)
+    df = retriever.retrieve_BM25(datasets['validation'], topk=data_args.top_k_retrieval, score_ratio=data_args.score_ratio, pickle_path=data_args.retrieve_pickle)
     
     # test data 에 대해선 정답이 없으므로 id question context 로만 데이터셋이 구성됩니다.
     if training_args.do_predict:

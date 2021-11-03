@@ -4,7 +4,7 @@ import time
 import pickle
 import numpy as np
 import pandas as pd
-from rank_bm25 import BM25Plus
+from rank_bm25 import BM25Plus, BM25Okapi, BM25L
 
 from tqdm.auto import tqdm
 from contextlib import contextmanager
@@ -32,6 +32,7 @@ class SparseRetrieval:
         data_path: Optional[str] = '../data',
         context_path: Optional[str] = "wikipedia_documents.json",
         pt_num: Optional[str] = None,
+        bm25_type: Optional[str] = '',
     ) -> NoReturn:
 
         """
@@ -57,6 +58,7 @@ class SparseRetrieval:
 
         self.data_path = data_path
         self.pt_num = pt_num
+        self.bm25_type = bm25_type
         with open(os.path.join(data_path,context_path), "r", encoding="utf-8") as f:
             wiki = json.load(f)
         
@@ -97,6 +99,7 @@ class SparseRetrieval:
 
         # Pickle을 저장 "0123"
         pt_num_sorted = "".join(sorted(self.pt_num)) if self.pt_num else 'raw'
+        pt_num_sorted += self.bm25_type
         pickle_name = f"BM25_embedding_{pt_num_sorted}.bin"
         bm_emd_path = os.path.join(self.data_path, pickle_name)
 
@@ -112,13 +115,19 @@ class SparseRetrieval:
             print("Build passage BM25_class_instant")
             # BM25는 어떤 text 전처리 X ->  BM25 클래스의 인스턴스를 생성
             tokenized_contexts= [self.tokenizer(i) for i in tqdm(self.contexts)]
-            self.BM25 = BM25Plus(tokenized_contexts)           
+            if self.bm25_type == '' :
+                self.BM25 = BM25Plus(tokenized_contexts)
+            elif self.bm25_type == 'BM25Okapi' :
+                self.BM25 = BM25Okapi(tokenized_contexts)
+            elif self.bm25_type == 'BM25L' :
+                self.BM25 = BM25L(tokenized_contexts)
+
             with open(bm_emd_path, "wb") as file:
                 pickle.dump(self.BM25, file)
             print("BM25_class_instant pickle saved.")
 
     def retrieve_BM25(
-        self, query_or_dataset: Union[str, Dataset], topk: Optional[int] = 1, score_ratio: Optional[float] = None
+        self, query_or_dataset: Union[str, Dataset], topk: Optional[int] = 1, score_ratio: Optional[float] = None, pickle_path: Optional[str] = None
     ) -> Union[Tuple[List, List], pd.DataFrame]:
 
         """
@@ -142,44 +151,53 @@ class SparseRetrieval:
         """
 
         assert self.BM25 is not None, "get_sparse_BM25() 메소드를 먼저 수행해줘야합니다."
-
-        if isinstance(query_or_dataset, str):
-            doc_scores, doc_indices = self.get_relevant_doc_BM25(query_or_dataset, k=topk)
-            print("[Search query]\n", query_or_dataset, "\n")
-
-            for i in range(topk):
-                print(f"Top-{i+1} passage with score {doc_scores[i]:4f}")
-                print(self.contexts[doc_indices[i]])
-
-            return (doc_scores, [self.contexts[doc_indices[i]] for i in range(topk)])
-
-        elif isinstance(query_or_dataset, Dataset):
-
-            # Retrieve한 Passage를 pd.DataFrame으로 반환합니다.
-            total = []
-            with timer("query exhaustive search"):
-                doc_scores, doc_indices = self.get_relevant_doc_bulk_BM25(query_or_dataset, k=topk, score_ratio=score_ratio)
-            for idx, example in enumerate(
-                tqdm(query_or_dataset, desc="BM25 retrieval: ")
-            ):
-                tmp = {
-                    # Query와 해당 id를 반환합니다.
-                    "question": example["question"],
-                    "id": example["id"],
-                    # Retrieve한 Passage의 id, context를 반환합니다.
-                    "context_id": doc_indices[idx],
-                    "context": " ".join(
-                        [self.contexts[pid] for pid in doc_indices[idx]]
-                    ),
-                }
-                if "context" in example.keys() and "answers" in example.keys():
-                    # validation 데이터를 사용하면 ground_truth context와 answer도 반환합니다.
-                    tmp["original_context"] = example["context"]
-                    tmp["answers"] = example["answers"]
-                total.append(tmp)
-
-            cqas = pd.DataFrame(total)
+        pickle_name = f"BM25_retrieve_{pickle_path}.bin"
+        if os.path.isfile(pickle_name) :
+            with open(pickle_name, "rb") as file:
+                cqas = pickle.load(pickle_name)
+            print("BM25 retrieve pickle load.")
             return cqas
+        else :
+            if isinstance(query_or_dataset, str):
+                doc_scores, doc_indices = self.get_relevant_doc_BM25(query_or_dataset, k=topk)
+                print("[Search query]\n", query_or_dataset, "\n")
+
+                for i in range(topk):
+                    print(f"Top-{i+1} passage with score {doc_scores[i]:4f}")
+                    print(self.contexts[doc_indices[i]])
+
+                return (doc_scores, [self.contexts[doc_indices[i]] for i in range(topk)])
+
+            elif isinstance(query_or_dataset, Dataset):
+
+                # Retrieve한 Passage를 pd.DataFrame으로 반환합니다.
+                total = []
+                with timer("query exhaustive search"):
+                    doc_scores, doc_indices = self.get_relevant_doc_bulk_BM25(query_or_dataset, k=topk, score_ratio=score_ratio)
+                for idx, example in enumerate(
+                    tqdm(query_or_dataset, desc="BM25 retrieval: ")
+                ):
+                    tmp = {
+                        # Query와 해당 id를 반환합니다.
+                        "question": example["question"],
+                        "id": example["id"],
+                        # Retrieve한 Passage의 id, context를 반환합니다.
+                        "context_id": doc_indices[idx],
+                        "context": " ".join(
+                            [self.contexts[pid] for pid in doc_indices[idx]]
+                        ),
+                    }
+                    if "context" in example.keys() and "answers" in example.keys():
+                        # validation 데이터를 사용하면 ground_truth context와 answer도 반환합니다.
+                        tmp["original_context"] = example["context"]
+                        tmp["answers"] = example["answers"]
+                    total.append(tmp)
+                cqas = pd.DataFrame(total)
+
+                if pickle_path is not None :
+                    with open(pickle_name, "wb" ) as file:
+                        pickle.dump(cqas, file)
+                return cqas
 
     def get_relevant_doc_BM25(self, query: str, k: Optional[int] = 1) -> Tuple[List, List]:
 

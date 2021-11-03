@@ -4,13 +4,15 @@ Open-Domain Question Answering 을 수행하는 inference 코드 입니다.
 대부분의 로직은 train.py 와 비슷하나 retrieval, predict 부분이 추가되어 있습니다.
 """
 
-
 import logging
 import sys
+from typing import Callable, ContextManager, List, Dict, NoReturn, Tuple
+from glob import glob
 import torch
-from typing import Callable, List, Dict, NoReturn, Tuple
 
 import numpy as np
+import torch
+from tqdm.auto import tqdm
 
 from datasets import (
     load_metric,
@@ -35,9 +37,8 @@ from transformers import (
 from utils_qa import postprocess_qa_predictions, check_no_error
 from trainer_qa import QuestionAnsweringTrainer
 
-from retriever.retriever_sparse_BM25 import SparseRetrieval
+from retriever.rt_bm25 import SparseRetrieval
 from retriever.elastic_search import run_elastic_sparse_retrieval
-from retriever.retriever_dense import DenseRetrieval
 
 from arguments import (
     ModelArguments,
@@ -49,23 +50,28 @@ import wandb
 from dotenv import load_dotenv
 import os
 
-from retriever.model_encoder import BertEncoder
+from retriever.rt_model import BertEncoder, klueRobertaEncoder
 
 
 from preprocessor import Preprocessor
+import pandas as pd
 
 logger = logging.getLogger(__name__)
+
 
 def main():
     # 가능한 arguments 들은 ./arguments.py 나 transformer package 안의 src/transformers/training_args.py 에서 확인 가능합니다.
     # --help flag 를 실행시켜서 확인할 수 도 있습니다.
-    
+
     # dataclass를 통해 변수를 만들고 HfArgumentParser를 통해 합쳐서 사용
     parser = HfArgumentParser(
         (ModelArguments, DataTrainingArguments, TrainingArguments, LoggingArguments)
     )
     model_args, data_args, training_args, log_args = parser.parse_args_into_dataclasses()
-       
+    
+    #trainingarguments
+    training_args.per_device_eval_batch_size = 8
+    
     #wandb
     load_dotenv(dotenv_path=log_args.dotenv_path)
     WANDB_AUTH_KEY = os.getenv("WANDB_AUTH_KEY")
@@ -73,12 +79,11 @@ def main():
     
     wandb.init(
         entity="klue-level2-nlp-02",
-        project=log_args.project_name,
+        project="mrc_project_Rerank",
         name=log_args.wandb_name + "_eval" if training_args.do_eval==True else "_inference",
         group=model_args.model_name_or_path,
     )
     wandb.config.update(training_args)
-
 
     # training_args.do_train = True
 
@@ -103,14 +108,30 @@ def main():
     #데이터셋을 불러옵니다.
     datasets = load_from_disk(data_args.dataset_name)
 
-    #cache 파일을 정리합니다.
+    # cache 파일을 정리합니다.
     datasets.cleanup_cache_files()
     
-    #기본 전처리를 진행합니다.
+    if training_args.do_predict==True and data_args.add_special_tokens_query_flag:
+        q_type_data = pd.read_csv("./csv/question_tag_testset.csv",index_col=0)
+        train_data = datasets['validation'].to_pandas()
+        train_data['question'] = train_data['question']+q_type_data['Q_tag']
+        datasets['validation'] = datasets['validation'].from_pandas(train_data)
+        print(datasets['validation']['question'][0])
+        print("======================================= predict Tag complete============================")
+        
     if training_args.do_eval==True and data_args.preprocessing_pattern != None:
-        datasets = Preprocessor.preprocessing(data = datasets, pt_num=data_args.preprocessing_pattern)
+        if data_args.add_special_tokens_query_flag:
+            q_type_data = pd.read_csv("./csv/question_tag_validset.csv",index_col=0)
+            
+            train_data = datasets['validation'].to_pandas()
+            train_data['question']=train_data['question']+q_type_data['Q_tag']
+            datasets['validation'] = datasets['validation'].from_pandas(train_data)
+            print(datasets['validation']['question'][0])
+            print("======================================= Tag complete============================")
+
+    datasets = Preprocessor.preprocessing(data = datasets, pt_num=data_args.preprocessing_pattern)
     print(datasets)
-    
+
     # AutoConfig를 이용하여 pretrained model 과 tokenizer를 불러옵니다.
     # argument로 원하는 모델 이름을 설정하면 옵션을 바꿀 수 있습니다.
     config = AutoConfig.from_pretrained(model_args.model_name_or_path)
@@ -118,7 +139,7 @@ def main():
         model_args.model_name_or_path,
         use_fast=True,
     )
-    
+
     model = AutoModelForQuestionAnswering.from_pretrained(
         model_args.model_name_or_path,
         from_tf=bool(".ckpt" in model_args.model_name_or_path),
@@ -138,45 +159,80 @@ def main():
             training_args,
             data_args,
         )
-    elif data_args.eval_retrieval == "dense":
-        datasets = run_dense_retrieval(
-            "klue/bert-base", datasets, training_args, data_args
-        )
+    
+    if data_args.re_rank == True:
+        if 'roberta' in model_args.rt_model_name:
+            rt_tokenizer = AutoTokenizer.from_pretrained(model_args.rt_model_name)
+            p_encoder = klueRobertaEncoder(model_args.rt_model_name)
+            q_encoder = klueRobertaEncoder(model_args.rt_model_name)
+        else:
+            rt_tokenizer = AutoTokenizer.from_pretrained(model_args.rt_model_name)
+            p_encoder = BertEncoder.from_pretrained(model_args.rt_model_name)
+            q_encoder = BertEncoder.from_pretrained(model_args.rt_model_name)
+        p_encoder, q_encoder = load_rerank_model(p_encoder, q_encoder)
+
+
+        datasets = re_rank_use_model(training_args, model_args.rt_model_name, datasets, rt_tokenizer, p_encoder, q_encoder, data_args.re_rank_top_k)
 
     # eval or predict mrc model
     if training_args.do_eval or training_args.do_predict:
         run_mrc(data_args, training_args, model_args, datasets, tokenizer, model)
 
-def run_dense_retrieval(
-    model_checkpoint: str,
-    datasets: DatasetDict,
-    training_args: TrainingArguments,
-    data_args: DataTrainingArguments,
-):
-    dense_tokenizer = AutoTokenizer.from_pretrained(model_checkpoint)
-    p_encoder = BertEncoder.from_pretrained(model_checkpoint).to(training_args.device)
-    q_encoder = BertEncoder.from_pretrained(model_checkpoint).to(training_args.device)
-    if data_args.num_neg != 0:
-        print("change batch size default(8) to 2 !!!")
-        training_args.per_device_train_batch_size = 2
-    retriever = DenseRetrieval(
-        training_args,
-        data_path="/opt/ml/data/train_dataset",
-        num_neg=data_args.num_neg,
-        tokenizer=dense_tokenizer,
-        p_encoder=p_encoder,
-        q_encoder=q_encoder,
-        save_dir="./encoders",
-    )
+def re_rank_use_model(training_args, model_name, datasets:DatasetDict, tokenizer, p_encoder, q_encoder, re_rank_top_k = 10):
+    df = datasets['validation'].to_pandas()
+    
+    queries = df['question'].tolist()
+    contexts = df['context'].tolist()
 
-    retriever.load_encoder()
-    df = retriever.retrieve(
-        datasets["validation"],
-        "/opt/ml/data/wiki_embedding.csv",
-        topk=data_args.top_k_retrieval,
-    )
+    print(f"query의 개수 : {len(queries)}")
+    print(f"top_k_passage 개수 : {len(contexts)}")
 
-    # test data 에 대해선 정답이 없으므로 id question context 로만 데이터셋이 구성됩니다.
+    top_k_passage = []
+
+    for passages in contexts:
+        p_list = passages.split("▦")
+        top_k_passage.append(p_list)
+    print(f"query 당 passage 개수 : {len(top_k_passage[0])}")
+
+    rerank_passage = []
+
+    p_encoder.to('cuda')
+    q_encoder.to('cuda')
+
+    for idx in tqdm(range(len(queries))):
+        q_seqs = tokenizer(
+            queries[idx],
+            padding="max_length",
+            truncation=True,
+            return_tensors="pt",
+            return_token_type_ids=False if 'roberta' in model_name else True,
+        ).to('cuda')  # (1, 512)
+
+        p_seqs = tokenizer(
+            top_k_passage[idx],
+            padding="max_length",
+            truncation=True,
+            return_tensors="pt",
+            return_token_type_ids=False if 'roberta' in model_name else True,
+        ).to('cuda')  # (top_k, 512)      
+
+        with torch.no_grad():
+            q_encoder.eval()
+            p_encoder.eval()
+
+            q_outputs = q_encoder(**q_seqs).to('cpu')
+            p_outputs = p_encoder(**p_seqs).to('cpu')
+
+            sim_score = torch.matmul(q_outputs, p_outputs.transpose(0,1)) # (1, top_k)
+            indices = torch.argsort(sim_score, dim=1, descending=True).squeeze(0)[:re_rank_top_k]
+        temp = []
+        for i in indices:
+            temp.append(top_k_passage[idx][i])
+        rerank_passage.append(" ".join(temp))
+
+    print(f"re-rank passage 개수 :{len(rerank_passage)}")
+    df['context'] = rerank_passage
+    
     if training_args.do_predict:
         f = Features(
             {
@@ -203,8 +259,29 @@ def run_dense_retrieval(
                 "question": Value(dtype="string", id=None),
             }
         )
-    datasets = DatasetDict({"validation": Dataset.from_pandas(df, features=f)})
-    return datasets
+    return DatasetDict({"validation": Dataset.from_pandas(df, features=f)})
+
+def load_rerank_model(p_encoder, q_encoder):
+    file_list = glob('/opt/ml/mrc-level2-nlp-02/encoders/*')
+
+
+    for idx, file_name in enumerate(file_list):
+        print(f"{idx} : {file_name.split('/')[-1]}")
+    
+    select_num = int(input("모델을 선택하세요 : "))
+
+    full_path = file_list[select_num]
+    p_encoder_path = os.path.join(full_path, "passage.pt")
+    q_encoder_path = os.path.join(full_path, "query.pt")
+
+    assert os.path.isfile(p_encoder_path) or os.path.isfile(q_encoder_path), "rt_train을 실행해서 model parameter를 저장해야 합니다."
+
+    p_encoder.load_state_dict(torch.load(p_encoder_path))
+    q_encoder.load_state_dict(torch.load(q_encoder_path))
+
+    print("finish load model state dict !!!")
+
+    return p_encoder, q_encoder
 
 
 def run_sparse_retrieval(
@@ -225,14 +302,18 @@ def run_sparse_retrieval(
         pt_num=data_args.preprocessing_pattern,
         add_special_tokens_flag=data_args.add_special_tokens_flag
     )
-    
+
     # Passage Embedding 만들기
     retriever.get_sparse_BM25()
-    df = retriever.retrieve_BM25(datasets['validation'], topk=data_args.top_k_retrieval, score_ratio=data_args.score_ratio)
-    
+    df = retriever.retrieve_BM25(
+        datasets["validation"],
+        topk=data_args.top_k_retrieval,
+        score_ratio=data_args.score_ratio,
+    )
+
     # test data 에 대해선 정답이 없으므로 id question context 로만 데이터셋이 구성됩니다.
     if training_args.do_predict:
-        f = Features( # Features로 데이터 셋 형식화?
+        f = Features(  # Features로 데이터 셋 형식화?
             {
                 "context": Value(dtype="string", id=None),
                 "id": Value(dtype="string", id=None),
@@ -242,7 +323,7 @@ def run_sparse_retrieval(
 
     # train data 에 대해선 정답이 존재하므로 id question context answer 로 데이터셋이 구성됩니다.
     elif training_args.do_eval:
-        f = Features( # Features로 형식화?
+        f = Features(  # Features로 형식화?
             {
                 "answers": Sequence(
                     feature={
@@ -298,7 +379,7 @@ def run_mrc(
             stride=data_args.doc_stride,
             return_overflowing_tokens=True,
             return_offsets_mapping=True,
-            return_token_type_ids=False, # roberta모델을 사용할 경우 False, bert를 사용할 경우 True로 표기해야합니다.
+            return_token_type_ids=False,  # roberta모델을 사용할 경우 False, bert를 사용할 경우 True로 표기해야합니다.
             padding="max_length" if data_args.pad_to_max_length else False,
         )
 

@@ -14,6 +14,12 @@ class ModelArguments:
             "help": "Path to pretrained model or model identifier from huggingface.co/models"
         },
     )
+    rt_model_name: str = field(
+        default="klue/bert-base",
+        metadata={
+            "help": "Path to pretrained model or model identifier from huggingface.co/models"
+        },
+    )
     config_name: Optional[str] = field(
         default="klue/roberta-large",
         metadata={
@@ -107,7 +113,7 @@ class DataTrainingArguments:
         metadata={"help": "Whether to train sparse/dense embedding (prepare for retrieval)."},
     )
     data_selected: str = field(
-        default="context",
+        default="",
         metadata={"help": "data to find added tokens, context/answers/question with '_' e.g.) context_answers"},
     )
     rtt_dataset_name:str = field(
@@ -132,6 +138,17 @@ class DataTrainingArguments:
     reconfig: bool = field(
         default=False,
         metadata={"help": "Elastic search re-config flag"},
+    )
+    re_rank: bool = field(
+        default=False,
+        metadata={"help": "re-rank top-k passage"},
+    )
+    re_rank_top_k : int = field(
+        default=10, metadata={"help": "Define how many re-rank passage"},
+    )
+    add_special_tokens_query_flag:bool = field(
+        default=False,
+        metadata={"help": "add special tokens about question type"},
     )
 
 @dataclass

@@ -4,27 +4,32 @@ from tqdm import tqdm
 import os
 import re
 
-speical_tokens = {'additional_special_tokens': ['[SPLIT]']}
+speical_tokens = {'additional_special_tokens': ['[SPLIT]', '[WHO]','[WHEN]','[WHERE]','[HOW]','[WHY]','[WHAT]']}
 
 def load_pretrained_tokenizer(pretrained_model_name_or_path:str,
-                              tokenizer_name:str,
-                              custom_flag:bool=False,
-                              data_selected:str= None,
+                              data_selected:str= "",
                               datasets=False,
                               add_special_tokens_flag=False,
                               use_fast=True):
     
-    if custom_flag: #custom_flag=True인 경우 Custom_tokenizer 사용
+    tokenizer_name = "tokenizer/custom_" \
+                        + ("c" if 'context'  in data_selected else "" ) \
+                        + ("q" if 'question' in data_selected else "" ) \
+                        + ("a" if 'answers'  in data_selected else "" )
+
+    if data_selected: #custom_flag=True인 경우 Custom_tokenizer 사용
         if not os.path.isdir(tokenizer_name):
             save_customized_tokenizer(datasets['train'], pretrained_model_name_or_path, data_selected,
-                                      use_fast,tokenizer_name,add_special_tokens_flag)
+                                      use_fast,tokenizer_name)
             print("make customized tokenizer!!!!!!!!!!!!")
-        return AutoTokenizer.from_pretrained(tokenizer_name, use_fast=use_fast)
+        tokenizer =  AutoTokenizer.from_pretrained(tokenizer_name, use_fast=use_fast)
     else:
         tokenizer = AutoTokenizer.from_pretrained(pretrained_model_name_or_path, use_fast=use_fast)
-        if add_special_tokens_flag == True :
-            add_special_tokens(tokenizer)
-        return tokenizer
+    
+    if add_special_tokens_flag:
+        add_special_tokens(tokenizer)
+        tokenizer.save_pretrained(tokenizer_name)
+    return tokenizer
         # 'use_fast' argument를 True로 설정할 경우 rust로 구현된 tokenizer를 사용할 수 있습니다.
         # False로 설정할 경우 python으로 구현된 tokenizer를 사용할 수 있으며,
         # rust version이 비교적 속도가 빠릅니다.
@@ -93,17 +98,15 @@ def get_added_token(trainset, tokenizer, data_selected):
 
 
 def add_special_tokens(tokenizer):
-    special_tokens_dict = speical_tokens
-    tokenizer.add_special_tokens(special_tokens_dict)  
+    tokenizer.add_special_tokens(speical_tokens)  
 
 def save_customized_tokenizer(trainset, pretrained_model_name_or_path, data_selected,
-                              use_fast, tokenizer_name,add_special_tokens_flag):
+                              use_fast, tokenizer_name,add_special_tokens_flag
+                             ,add_special_tokens_query_flag):
     tokenizer = AutoTokenizer.from_pretrained(pretrained_model_name_or_path, use_fast=use_fast)
+    
     added_token_list = get_added_token(trainset, tokenizer, data_selected)
     tokenizer.add_tokens(added_token_list)
-    
-    if add_special_tokens_flag==True:
-        add_special_tokens(tokenizer)
 
     #tokenizer 저장
     tokenizer.save_pretrained(tokenizer_name)

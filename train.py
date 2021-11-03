@@ -19,8 +19,7 @@ from transformers import (
 
 from utils_qa import postprocess_qa_predictions, check_no_error
 from trainer_qa import QuestionAnsweringTrainer
-from retriever.retriever_dense import DenseRetrieval
-from retriever.retriever_sparse_BM25 import SparseRetrieval
+from retriever.rt_bm25 import SparseRetrieval
 from augmentation import SpanAugmentation
 
 from arguments import (
@@ -52,8 +51,8 @@ def main():
 
     wandb.init(
         entity="klue-level2-nlp-02",
-        project="mrc_project_1",
-        name=log_args.wandb_name + "_train/train" if training_args.do_train==True else "_train/eval",
+        project=log_args.project_name,
+        name=log_args.wandb_name + "_train/train" if training_args.do_train==True else log_args.wandb_name + "_train/eval",
         group=model_args.model_name_or_path,
     )
     wandb.config.update(training_args)
@@ -84,11 +83,58 @@ def main():
     # 데이터셋을 불러옵니다.
     datasets = load_from_disk(data_args.dataset_name)
     
+    # AutoConfig를 이용하여 pretrained model 과 tokenizer를 불러옵니다.
+    # argument로 원하는 모델 이름을 설정하면 옵션을 바꿀 수 있습니다.
+    config = AutoConfig.from_pretrained(
+        model_args.model_name_or_path)
+    print(config)
+    #     # 'use_fast' argument를 True로 설정할 경우 rust로 구현된 tokenizer를 사용할 수 있습니다.
+    #     # False로 설정할 경우 python으로 구현된 tokenizer를 사용할 수 있으며,
+    #     # rust version이 비교적 속도가 빠릅니다.
+    
+    tokenizer = load_pretrained_tokenizer(
+            pretrained_model_name_or_path = model_args.model_name_or_path,
+            data_selected = data_args.data_selected,
+            datasets=datasets,
+            add_special_tokens_flag = data_args.add_special_tokens_flag or data_args.add_special_tokens_query_flag,
+            use_fast=True)
+    
+    print("\n","num of added vocab in tokenizer : ", len(tokenizer.vocab) - config.vocab_size)
+
+    # Question tag 붙이기
+    if data_args.add_special_tokens_query_flag:
+        if training_args.do_train:
+            q_type_data = pd.read_csv("./csv/question_tag_trainset.csv",index_col=0)
+            
+            train_data = datasets['train'].to_pandas()
+            train_data['question']=train_data['question']+q_type_data['Q_tag']
+            datasets['train'] = datasets['train'].from_pandas(train_data)
+            
+            print(" "+"*"*50,"\n","*"*50,"\n","*"*50)
+            print(" ***** question tag 끝!: ", datasets['train']['question'][0],"******")
+            print(" "+"*"*50,"\n","*"*50,"\n","*"*50,"\n\n")
+        
+        elif training_args.do_eval:
+            q_type_data = pd.read_csv("./csv/question_tag_validset.csv",index_col=0)
+            
+            train_data = datasets['validation'].to_pandas()
+            train_data['question']=train_data['question']+q_type_data['Q_tag']
+            datasets['validation'] = datasets['validation'].from_pandas(train_data)
+            
+            print(" "+"*"*50,"\n","*"*50,"\n","*"*50)
+            print(" ***** question tag 끝!: ", datasets['validation']['question'][0],"******")
+            print(" "+"*"*50,"\n","*"*50,"\n","*"*50,"\n\n")
+
     # rtt 데이터셋이 존재할 경우 기존 데이터셋과 합칩니다.
     if data_args.rtt_dataset_name != None:
         print(" "+"*"*50,"\n","*"*50,"\n","*"*50)
         print(" ***** rtt 데이터 병합 전 데이터 개수: ", len(datasets['train']),"******")
-        rtt_data = pd.read_csv(data_args.rtt_dataset_name,  index_col=0)
+        rtt_data = pd.read_csv(data_args.rtt_dataset_name,index_col=0)
+        
+        if data_args.add_special_tokens_query_flag:
+            q_data = pd.read_csv("./csv/question_tag_rtt_papago_ner.csv",index_col=0)
+            rtt_data['question']=rtt_data['question']+q_data['Q_tag']
+            print(" ***** rtt question tag 끝!: ", rtt_data.loc[0]['question'],"******")
         rtt_data['answers'] = rtt_data.answers.map(eval)
 
         train_data = datasets['train'].to_pandas()
@@ -123,8 +169,6 @@ def main():
     
     tokenizer = load_pretrained_tokenizer(
         pretrained_model_name_or_path = model_args.model_name_or_path,
-        tokenizer_name = model_args.tokenizer_name,
-        custom_flag = model_args.customized_tokenizer_flag,
         data_selected = data_args.data_selected,
         datasets=datasets,
         add_special_tokens_flag = data_args.add_special_tokens_flag,

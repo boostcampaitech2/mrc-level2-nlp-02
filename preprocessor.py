@@ -24,8 +24,8 @@ class Preprocessor :
             pd_data = pd.DataFrame({"contexts" : data})
             #조건별 전처리 적용
             for num in pt_num:
-                preprocessing = lambda x : self.pattern_dict[num].sub(" ", x)
-                pd_data["contexts"] = pd_data.contexts.map(preprocessing)
+                preprocessing_ = lambda x : self.pattern_dict[num].sub(" ", x)
+                pd_data["contexts"] = pd_data.contexts.map(preprocessing_)
             
             #2칸 이상의 빈칸을 1칸으로 변경
             pd_data["contexts"] = pd_data.contexts.map(lambda x : re.sub("\s+", " ", x))

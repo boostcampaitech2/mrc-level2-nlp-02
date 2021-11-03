@@ -3,6 +3,7 @@
 *.pt
 *.bin
 *.sh
+*.ipynb
 wandb.env
 outputs/
 wandb/

@@ -16,6 +16,9 @@ from arguments import (
     DataTrainingArguments,
 )
 
+from preprocessor import Preprocessor
+from retriever import model_encoder
+
 def create_elastic_object() -> Elasticsearch:
     """Elasticsearch와 연결하는 object 생성
     Returns:
@@ -118,6 +121,10 @@ def prepare_config(es, docs_config, index_name, args):
         if args.eval_retrieval == "elastic_dense":
             p_embs_sen, p_embs_bert = dense_embedding(df)
             text = df['text'].to_list()
+
+            if args.preprocessing_pattern != None:
+                text = Preprocessor.preprocessing(text, pt_num=args.preprocessing_pattern)
+
             title = df['title'].to_list()
             document_id = df['document_id'].to_list()
             gen = generator_dense(text[: 100 * (len(df) // 100)], 

@@ -6,8 +6,8 @@ class Preprocessor :
     pattern_dict={
                 "1" : re.compile("(\\n)+|(\\\\n)+|(\\xa0)|(\\u3000)|( )+"),
                 "2" : re.compile("(\\\\n)+|(\\n)+|[^a-zA-Z0-9가-힣ㄱ-ㅎㅏ-ㅣぁ-ゔァ-ヴー々〆〤一-龥()?!∧≪≫『』\'<>〈〉:「」＜＞<>》《・\"-“”\s\.\‘’%,]"),
-                "3" : re.compile('['+chr(0)+'-'+chr(31)+chr(8191)+'-'+chr(12288)+chr(55204)+'-'+chr(63743)+']')} # e.g \u3000 \u200d \u210e ...
-
+                "3" : re.compile(r'[\u0000-\u001f\u1fff-\u3000\ud7a4-\uf8ff\U000186a0-\U00030d40]')}
+     
     @classmethod
     def preprocessing(self, data, pt_num): #pt_num 123_0 or 123_1
         # dataset
@@ -28,7 +28,7 @@ class Preprocessor :
                 pd_data["contexts"] = pd_data.contexts.map(preprocessing_)
             
             #2칸 이상의 빈칸을 1칸으로 변경
-            pd_data["contexts"] = pd_data.contexts.map(lambda x : re.sub("\s+"," ", x))
+            pd_data["contexts"] = pd_data.contexts.map(lambda x : re.sub("\s+", " ", x))
             data = pd_data.drop_duplicates("contexts").contexts.to_list()
         return data
 
@@ -41,21 +41,22 @@ class Preprocessor :
         context_prev = context[:answer_start]
         context_next = context[answer_start + len(answer_text):]
 
+        answer_text = self.sen_preprocess(self, context=answer_text, pt_num=pt_num)
         context_prev = self.sen_preprocess(self, context=context_prev, pt_num=pt_num)
         context_next = self.sen_preprocess(self, context=context_next, pt_num=pt_num)
 
         answer_pos = len(context_prev)
         context = context_prev + answer_text + context_next
+        context = re.sub('\s+' , ' ', context) 
         answer = {'answer_start' : [answer_pos], 'text' : [answer_text]}
 
         dataset['context'] = context
         dataset['answers'] = answer
-
         return dataset
 
     def sen_preprocess(self, context, pt_num) :
         for num in pt_num:
-            context = self.pattern_dict[num].sub(" ",context)
-            context = re.sub("\s+"," ",context)
+            context = self.pattern_dict[num].sub(" ",context) 
+            context = re.sub('\s+', ' ', context)   
         return context
 

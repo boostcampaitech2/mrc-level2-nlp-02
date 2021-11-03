@@ -109,11 +109,11 @@ class DataTrainingArguments:
         default=False, metadata={"help": "Whether to build with faiss"}
     )
     train_retrieval: bool = field(
-        default=True,
+        default=False,
         metadata={"help": "Whether to train sparse/dense embedding (prepare for retrieval)."},
     )
     data_selected: str = field(
-        default=None,
+        default="",
         metadata={"help": "data to find added tokens, context/answers/question with '_' e.g.) context_answers"},
     )
     rtt_dataset_name:str = field(
@@ -127,6 +127,10 @@ class DataTrainingArguments:
     add_special_tokens_flag:bool = field(
         default=False,
         metadata={"help": "add special tokens"},
+    )
+    pretrain_span_augmentation : bool = field(
+        default=False,
+        metadata={"help": "pretrain data using span augmentation"},
     )
     num_neg: int = field(
         default=0, metadata={"help": "Define how many negative sampling dataset"},

@@ -19,6 +19,8 @@ from transformers import (
 
 from utils_qa import postprocess_qa_predictions, check_no_error
 from trainer_qa import QuestionAnsweringTrainer
+from retriever.rt_bm25 import SparseRetrieval
+from augmentation import SpanAugmentation
 
 from arguments import (
     ModelArguments,
@@ -58,7 +60,7 @@ def main():
     # [참고] argument를 manual하게 수정하고 싶은 경우에 아래와 같은 방식을 사용할 수 있습니다
     # training_args.per_device_train_batch_size = 4
     # print(training_args.per_device_train_batch_size)
-    # training_args.num_train_epochs=1
+    training_args.num_train_epochs=1
 
     print(f"model is from {model_args.model_name_or_path}")
     print(f"data is from {data_args.dataset_name}")
@@ -115,6 +117,35 @@ def main():
         print(" "+"*"*50,"\n","*"*50,"\n","*"*50,"\n\n")
     print(datasets)
 
+    # Span Augmentation을 적용합니다.
+    if data_args.pretrain_span_augmentation == True :
+        print('Span Augmentation을 이용해서 데이터를 증가')
+        print('증가하기 이전에 데이터 수 : %d' %len(datasets['train']))
+        span_augmentation = SpanAugmentation()
+        train_data = datasets['train']
+        train_data = span_augmentation(train_data)
+
+        datasets['train'] = train_data
+        print('증가하고 난 이후의 데이터 수 : %d' %len(datasets['train']))
+    print(datasets)
+
+    # AutoConfig를 이용하여 pretrained model 과 tokenizer를 불러옵니다.
+    # argument로 원하는 모델 이름을 설정하면 옵션을 바꿀 수 있습니다.
+    config = AutoConfig.from_pretrained(
+        model_args.model_name_or_path)
+    print(config)
+    #     # 'use_fast' argument를 True로 설정할 경우 rust로 구현된 tokenizer를 사용할 수 있습니다.
+    #     # False로 설정할 경우 python으로 구현된 tokenizer를 사용할 수 있으며,
+    #     # rust version이 비교적 속도가 빠릅니다.
+    
+    tokenizer = load_pretrained_tokenizer(
+        pretrained_model_name_or_path = model_args.model_name_or_path,
+        data_selected = data_args.data_selected,
+        datasets=datasets,
+        add_special_tokens_flag = data_args.add_special_tokens_flag,
+        use_fast=True)
+    print("\n","num of added vocab in tokenizer : ", len(tokenizer.vocab) - config.vocab_size)
+
     model = AutoModelForQuestionAnswering.from_pretrained(
         model_args.model_name_or_path,
         from_tf=bool(".ckpt" in model_args.model_name_or_path), # Load the model weights from a TensorFlow checkpoint save file
@@ -130,10 +161,26 @@ def main():
     datasets.cleanup_cache_files()
         
     # #기본 전처리를 진행합니다.
+    print(data_args.preprocessing_pattern)
     print("\n","전처리 전: \n",datasets['train']['context'][0])
     if data_args.preprocessing_pattern != None:
         datasets = Preprocessor.preprocessing(data = datasets, pt_num = data_args.preprocessing_pattern)
         print("\n","전처리 후: \n",datasets['train']['context'][0])
+    
+    if data_args.train_retrieval == True :
+        print('Retrieve Using Train Data')
+        retriever = SparseRetrieval(tokenize_fn = tokenizer.tokenize,
+            data_path = '/opt/ml/data',
+            context_path = 'wikipedia_documents.json',
+            pt_num=data_args.preprocessing_pattern,
+            add_special_tokens_flag=data_args.add_special_tokens_flag
+        )
+
+        retriever.get_sparse_BM25()
+        train_data = datasets['train'] 
+        train_data = retriever.retrieve_train_BM25(dataset=train_data, topk=2, rtt_name=data_args.rtt_dataset_name)
+        datasets['train'] = train_data
+        print("\n","Retrieved 이후 : \n", datasets['train']['context'][0])
 
     print(
         type(training_args),
@@ -146,7 +193,6 @@ def main():
     # do_train mrc model 혹은 do_eval mrc model
     if training_args.do_train or training_args.do_eval:
         run_mrc(data_args, training_args, model_args, datasets, tokenizer, model)
-
 
 def run_mrc(
     data_args: DataTrainingArguments,

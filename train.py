@@ -69,11 +69,11 @@ def main():
 
         
     datasets = load_from_disk(data_args.dataset_name)
+    # breakpoint()
     if data_args.use_longer_context:
         datasets = elastic_search.run_elastic_dense_retrieval(datasets, training_args, data_args)
     print(datasets)
 
-    breakpoint()
     # AutoConfig를 이용하여 pretrained model 과 tokenizer를 불러옵니다.
     # argument로 원하는 모델 이름을 설정하면 옵션을 바꿀 수 있습니다.
     config = AutoConfig.from_pretrained(
@@ -153,7 +153,7 @@ def run_mrc(
             return_token_type_ids=False, #utils.is_not_roberta(tokenizer), # roberta모델을 사용할 경우 False, bert를 사용할 경우 True로 표기해야합니다.
             padding="max_length" if data_args.pad_to_max_length else False,
         )
-
+        # breakpoint()
         # 길이가 긴 context가 등장할 경우 truncate를 진행해야하므로, 해당 데이터셋을 찾을 수 있도록 mapping 가능한 값이 필요합니다.
         sample_mapping = tokenized_examples.pop("overflow_to_sample_mapping")
         # token의 캐릭터 단위 position를 찾을 수 있도록 offset mapping을 사용합니다.

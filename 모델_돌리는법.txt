@@ -206,3 +206,7 @@ wandb:            train/f1 67.38384
 normalized(bm25)+normalized(sen)+normalized(bert) 5 0% no_rtt_2
 wandb:   train/exact_match 58.33333
 wandb:            train/f1 66.67551
+
+normalized(bm25)+normalized(sen)+normalized(bert) base_long_context
+wandb:   train/exact_match 50.41667
+wandb:            train/f1 59.92651

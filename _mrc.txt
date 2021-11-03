@@ -17,3 +17,7 @@ wandb:            train/f1 76.52455
 no_rtt 2epoch
 wandb:   train/exact_match 68.75
 wandb:            train/f1 77.08407
+
+기본모델 2epoch 5topk
+wandb:   train/exact_match 51.25
+wandb:            train/f1 61.69337

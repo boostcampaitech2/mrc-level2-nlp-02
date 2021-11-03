@@ -1,7 +1,7 @@
 import elasticsearch
 from elasticsearch import Elasticsearch
 import pandas as pd
-from datasets import DatasetDict, Dataset
+from datasets import DatasetDict, Dataset 
 import pororo
 import torch
 from tqdm import tqdm
@@ -69,11 +69,14 @@ def run_elastic_dense_retrieval(
   if training_args.do_eval:
     answers = datasets['validation']['answers']########EVAL########
   
-  if training_args.do_train:
-    ids = datasets['train']['id']
-    questions = datasets['train']['question']
-    answers = datasets['train']['answers']
-    contexts = datasets['train']['context']
+  ###########임시
+  # start = 0
+  # end = 10
+  if data_args.use_longer_context:
+    ids = datasets['train']['id']#[start:end]
+    questions = datasets['train']['question']#[start:end]
+    answers = datasets['train']['answers']#[start:end]
+    contexts = datasets['train']['context']#[start:end]
 
   # breakpoint()
   # q_encoder = BertEncoder.from_pretrained('encoders/q_encoder_neg').to('cuda') ###########
@@ -87,10 +90,16 @@ def run_elastic_dense_retrieval(
 
   relevent_contexts = []
 
-  if training_args.do_train:
+  if data_args.use_longer_context:
+    
     for question, context in tqdm(zip(questions, contexts)):
       relevent_context = search_with_elastic(es, question, data_args,training_args, q_encoder, tokenizer, context)
       relevent_contexts.append(relevent_context)
+      # ########################
+      # start += 1
+      # if start == end:
+      #   break
+      # #########################
   else:
     for question in tqdm(questions):
       relevent_context = search_with_elastic(es, question, data_args,training_args, q_encoder, tokenizer)
@@ -100,14 +109,14 @@ def run_elastic_dense_retrieval(
     df = pd.DataFrame({'id':ids, 'question':questions, 'context':relevent_contexts, 'answers':answers})########EVAL########
   elif training_args.do_predict:
     df = pd.DataFrame({'id':ids, 'question':questions, 'context':relevent_contexts}) ###PREDICTION###
-  elif training_args.do_train:
+  elif data_args.use_longer_context:
     df = pd.DataFrame({'id':ids, 'question':questions, 'context':relevent_contexts, 'answers':answers})
 
-  if training_args.do_train:
+  if data_args.use_longer_context:
     datasets = DatasetDict({"train": Dataset.from_pandas(df), 'validation':[]})
   else:
     datasets = DatasetDict({"validation": Dataset.from_pandas(df)})
-  breakpoint()
+  
 
   return datasets
 
@@ -290,16 +299,19 @@ def search_with_elastic(
   else:
     res = es.search(index='wiki_documents', body=query, size=data_args.top_k_retrieval)
   
+  # breakpoint()
   relevent_contexts = ''
-  if training_args.do_train:
-    relevent_contexts = context
   max_score = res['hits']['hits'][0]['_score']
+
+  if data_args.use_longer_context:
+    relevent_contexts = context
+    max_score = 0
   
   for i in range(data_args.top_k_retrieval):
     score = res['hits']['hits'][i]['_score']
     if score > max_score * 0.90:#######################################
-      relevent_contexts += res['hits']['hits'][i]['_source']['text']
       relevent_contexts += ' '
+      relevent_contexts += res['hits']['hits'][i]['_source']['text']
     else:
       break
   

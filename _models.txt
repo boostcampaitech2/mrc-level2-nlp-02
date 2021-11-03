@@ -6,7 +6,7 @@ python train.py --output_dir ./models/train_dataset --model_name_or_path monolog
 python train.py --output_dir ./models/train_dataset --model_name_or_path klue/roberta-large --do_train --overwrite_cache --overwrite_output_dir
 
 
-python train.py --do_train --model_name_or_path klue/roberta-large --output_dir models/train_dataset/no_rtt_3 --num_train_epochs 3 --overwrite_output_dir --top_k_retrieval 5 --use_longer_context
+python train.py --do_train --model_name_or_path klue/roberta-large --output_dir models/base_long_context3 --num_train_epochs 3 --overwrite_output_dir --top_k_retrieval 5 --use_longer_context --eval_retrieval elastic_dense --save_steps 3000
 
 
 

@@ -139,16 +139,16 @@ class DataTrainingArguments:
         default=False,
         metadata={"help": "Elastic search re-config flag"},
     )
-    reconfig: bool = field(
-        default=False,
-        metadata={"help": "Elastic search re-config flag"},
-    )
     re_rank: bool = field(
         default=False,
         metadata={"help": "re-rank top-k passage"},
     )
     re_rank_top_k : int = field(
         default=10, metadata={"help": "Define how many re-rank passage"},
+    )
+    add_special_tokens_query_flag:bool = field(
+        default=False,
+        metadata={"help": "add special tokens about question type"},
     )
 
 @dataclass

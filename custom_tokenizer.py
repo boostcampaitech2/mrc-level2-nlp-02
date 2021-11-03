@@ -4,7 +4,7 @@ from tqdm import tqdm
 import os
 import re
 
-speical_tokens = {'additional_special_tokens': ['[SPLIT]']}
+speical_tokens = {'additional_special_tokens': ['[SPLIT]', '[WHO]','[WHEN]','[WHERE]','[HOW]','[WHY]','[WHAT]']}
 
 def load_pretrained_tokenizer(pretrained_model_name_or_path:str,
                               data_selected:str= "",
@@ -26,7 +26,7 @@ def load_pretrained_tokenizer(pretrained_model_name_or_path:str,
     else:
         tokenizer = AutoTokenizer.from_pretrained(pretrained_model_name_or_path, use_fast=use_fast)
     
-    if add_special_tokens_flag == True :
+    if add_special_tokens_flag:
         add_special_tokens(tokenizer)
         tokenizer.save_pretrained(tokenizer_name)
     return tokenizer
@@ -101,8 +101,10 @@ def add_special_tokens(tokenizer):
     tokenizer.add_special_tokens(speical_tokens)  
 
 def save_customized_tokenizer(trainset, pretrained_model_name_or_path, data_selected,
-                              use_fast, tokenizer_name,add_special_tokens_flag):
+                              use_fast, tokenizer_name,add_special_tokens_flag
+                             ,add_special_tokens_query_flag):
     tokenizer = AutoTokenizer.from_pretrained(pretrained_model_name_or_path, use_fast=use_fast)
+    
     added_token_list = get_added_token(trainset, tokenizer, data_selected)
     tokenizer.add_tokens(added_token_list)
 

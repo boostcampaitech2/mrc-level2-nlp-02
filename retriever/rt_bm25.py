@@ -262,7 +262,7 @@ class SparseRetrieval:
         pickle_name = f"BM25_retrieve_{pickle_path}.bin"
         if os.path.isfile(pickle_name) :
             with open(pickle_name, "rb") as file:
-                cqas = pickle.load(pickle_name)
+                cqas = pickle.load(file)
             print("BM25 retrieve pickle load.")
             return cqas
         else :

@@ -10,6 +10,7 @@ def load_pretrained_tokenizer(pretrained_model_name_or_path:str,
                               data_selected:str= "",
                               datasets=False,
                               add_special_tokens_flag=False,
+                              add_special_tokens_query_flag=False,
                               use_fast=True):
     
     tokenizer_name = "tokenizer/custom_" \
@@ -33,7 +34,6 @@ def load_pretrained_tokenizer(pretrained_model_name_or_path:str,
         # 'use_fast' argument를 True로 설정할 경우 rust로 구현된 tokenizer를 사용할 수 있습니다.
         # False로 설정할 경우 python으로 구현된 tokenizer를 사용할 수 있으며,
         # rust version이 비교적 속도가 빠릅니다.
-
 
 def restore_word_by_tokens(tokenized_tokens):
     word = ""
@@ -98,9 +98,10 @@ def get_added_token(trainset, tokenizer, data_selected):
 
 
 def add_special_tokens(tokenizer):
-    tokenizer.add_special_tokens(speical_tokens)  
+    tokenizer.add_special_tokens(speical_tokens)
 
-def save_customized_tokenizer(trainset, pretrained_model_name_or_path, data_selected, use_fast, tokenizer_name):
+def save_customized_tokenizer(trainset, pretrained_model_name_or_path, data_selected,
+                              use_fast, tokenizer_name):
     tokenizer = AutoTokenizer.from_pretrained(pretrained_model_name_or_path, use_fast=use_fast)
     
     added_token_list = get_added_token(trainset, tokenizer, data_selected)

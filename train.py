@@ -1,6 +1,7 @@
 import logging
 import os
 import sys
+import math
 import torch
 import pandas as pd
 
@@ -60,7 +61,6 @@ def main():
     # [참고] argument를 manual하게 수정하고 싶은 경우에 아래와 같은 방식을 사용할 수 있습니다
     # training_args.per_device_train_batch_size = 4
     # print(training_args.per_device_train_batch_size)
-    training_args.num_train_epochs=1
 
     print(f"model is from {model_args.model_name_or_path}")
     print(f"data is from {data_args.dataset_name}")
@@ -100,14 +100,14 @@ def main():
             use_fast=True)
     
     print("\n","num of added vocab in tokenizer : ", len(tokenizer.vocab) - config.vocab_size)
-
+    
     # Question tag 붙이기
     if data_args.add_special_tokens_query_flag:
         if training_args.do_train:
             q_type_data = pd.read_csv("./csv/question_tag_trainset.csv",index_col=0)
             
             train_data = datasets['train'].to_pandas()
-            train_data['question']=train_data['question']+q_type_data['Q_tag']
+            train_data['question']=train_data['question']+' '+q_type_data['Q_tag']
             datasets['train'] = datasets['train'].from_pandas(train_data)
             
             print(" "+"*"*50,"\n","*"*50,"\n","*"*50)
@@ -118,7 +118,7 @@ def main():
             q_type_data = pd.read_csv("./csv/question_tag_validset.csv",index_col=0)
             
             train_data = datasets['validation'].to_pandas()
-            train_data['question']=train_data['question']+q_type_data['Q_tag']
+            train_data['question']=train_data['question']+' '+q_type_data['Q_tag']
             datasets['validation'] = datasets['validation'].from_pandas(train_data)
             
             print(" "+"*"*50,"\n","*"*50,"\n","*"*50)
@@ -126,7 +126,7 @@ def main():
             print(" "+"*"*50,"\n","*"*50,"\n","*"*50,"\n\n")
 
     # rtt 데이터셋이 존재할 경우 기존 데이터셋과 합칩니다.
-    if data_args.rtt_dataset_name != None:
+    if data_args.rtt_dataset_name != None and training_args.do_train:
         print(" "+"*"*50,"\n","*"*50,"\n","*"*50)
         print(" ***** rtt 데이터 병합 전 데이터 개수: ", len(datasets['train']),"******")
         rtt_data = pd.read_csv(data_args.rtt_dataset_name,index_col=0)
@@ -158,15 +158,6 @@ def main():
         print('증가하고 난 이후의 데이터 수 : %d' %len(datasets['train']))
     print(datasets)
 
-    # AutoConfig를 이용하여 pretrained model 과 tokenizer를 불러옵니다.
-    # argument로 원하는 모델 이름을 설정하면 옵션을 바꿀 수 있습니다.
-    config = AutoConfig.from_pretrained(
-        model_args.model_name_or_path)
-    print(config)
-    #     # 'use_fast' argument를 True로 설정할 경우 rust로 구현된 tokenizer를 사용할 수 있습니다.
-    #     # False로 설정할 경우 python으로 구현된 tokenizer를 사용할 수 있으며,
-    #     # rust version이 비교적 속도가 빠릅니다.
-    
     model = AutoModelForQuestionAnswering.from_pretrained(
         model_args.model_name_or_path,
         from_tf=bool(".ckpt" in model_args.model_name_or_path), # Load the model weights from a TensorFlow checkpoint save file
@@ -330,7 +321,6 @@ def run_mrc(
         if "train" not in datasets:
             raise ValueError("--do_train requires a train dataset")
         train_dataset = datasets["train"]
-
         # dataset에서 train feature를 생성합니다.
         train_dataset = train_dataset.map(
             prepare_train_features,
@@ -447,6 +437,9 @@ def run_mrc(
         post_process_function=post_processing_function,
         compute_metrics=compute_metrics,
     )
+    
+    total_steps = math.ceil(len(train_dataset)/training_args.per_device_train_batch_size)
+    trainer.create_optimizer_and_scheduler(total_steps, data_args.num_cycles, data_args.another_scheduler_flag)
 
     if training_args.do_train:
         if last_checkpoint is not None:

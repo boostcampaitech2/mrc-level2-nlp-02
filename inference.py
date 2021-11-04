@@ -1,6 +1,5 @@
 """
 Open-Domain Question Answering 을 수행하는 inference 코드 입니다.
-
 대부분의 로직은 train.py 와 비슷하나 retrieval, predict 부분이 추가되어 있습니다.
 """
 
@@ -11,7 +10,6 @@ from glob import glob
 import torch
 
 import numpy as np
-import torch
 from tqdm.auto import tqdm
 
 from datasets import (
@@ -34,11 +32,12 @@ from transformers import (
     set_seed,
 )
 
-from utils_qa_ys2 import postprocess_qa_predictions, check_no_error
+from utils_qa import postprocess_qa_predictions, check_no_error
 from trainer_qa import QuestionAnsweringTrainer
 
 from retriever.rt_bm25 import SparseRetrieval
-from retriever.elastic_search import run_elastic_sparse_retrieval
+from retriever.rt_ES_sparse import run_elastic_sparse_retrieval
+from retriever.elastic_search import run_elastic_dense_retrieval
 
 from arguments import (
     ModelArguments,
@@ -114,7 +113,7 @@ def main():
     if training_args.do_predict==True and data_args.add_special_tokens_query_flag:
         q_type_data = pd.read_csv("./csv/question_tag_testset.csv",index_col=0)
         train_data = datasets['validation'].to_pandas()
-        train_data['question'] = train_data['question']+q_type_data['Q_tag']
+        train_data['question'] = train_data['question']+' '+q_type_data['Q_tag']
         datasets['validation'] = datasets['validation'].from_pandas(train_data)
         print(datasets['validation']['question'][0])
         print("======================================= predict Tag complete============================")
@@ -124,7 +123,7 @@ def main():
             q_type_data = pd.read_csv("./csv/question_tag_validset.csv",index_col=0)
             
             train_data = datasets['validation'].to_pandas()
-            train_data['question']=train_data['question']+q_type_data['Q_tag']
+            train_data['question']=train_data['question']+' '+q_type_data['Q_tag']
             datasets['validation'] = datasets['validation'].from_pandas(train_data)
             print(datasets['validation']['question'][0])
             print("======================================= Tag complete============================")
@@ -159,7 +158,13 @@ def main():
             training_args,
             data_args,
         )
-    
+    elif data_args.eval_retrieval == "elastic_dense":
+        datasets = run_elastic_dense_retrieval(
+            datasets,
+            training_args,
+            data_args,
+        )
+        
     if data_args.re_rank == True:
         if 'roberta' in model_args.rt_model_name:
             rt_tokenizer = AutoTokenizer.from_pretrained(model_args.rt_model_name)
@@ -309,6 +314,7 @@ def run_sparse_retrieval(
         datasets["validation"],
         topk=data_args.top_k_retrieval,
         score_ratio=data_args.score_ratio,
+        pickle_path=data_args.retrieve_pickle
     )
 
     # test data 에 대해선 정답이 없으므로 id question context 로만 데이터셋이 구성됩니다.
@@ -460,7 +466,7 @@ def run_mrc(
 
     def compute_metrics(p: EvalPrediction) -> Dict:
         return metric.compute(predictions=p.predictions, references=p.label_ids)
-
+    
     print("init trainer...")
     # Trainer 초기화
     trainer = QuestionAnsweringTrainer(

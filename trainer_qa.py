@@ -16,7 +16,13 @@
 Question-Answering task와 관련된 'Trainer'의 subclass 코드 입니다.
 """
 
-from transformers import Trainer, is_datasets_available, is_torch_tpu_available
+from transformers import (
+    Trainer, 
+    is_datasets_available, 
+    is_torch_tpu_available,
+    AdamW,
+    get_cosine_with_hard_restarts_schedule_with_warmup
+)
 from transformers.trainer_utils import PredictionOutput
 
 
@@ -38,7 +44,6 @@ class QuestionAnsweringTrainer(Trainer):
         eval_dataset = self.eval_dataset if eval_dataset is None else eval_dataset
         eval_dataloader = self.get_eval_dataloader(eval_dataset)
         eval_examples = self.eval_examples if eval_examples is None else eval_examples
-
         # 일시적으로 metric computation를 불가능하게 한 상태이며, 해당 코드에서는 loop 내에서 metric 계산을 수행합니다.
         compute_metrics = self.compute_metrics
         self.compute_metrics = None
@@ -59,7 +64,6 @@ class QuestionAnsweringTrainer(Trainer):
                 type=eval_dataset.format["type"],
                 columns=list(eval_dataset.features.keys()),
             )
-
         if self.post_process_function is not None and self.compute_metrics is not None:
             eval_preds = self.post_process_function(
                 eval_examples, eval_dataset, output.predictions, self.args
@@ -111,3 +115,20 @@ class QuestionAnsweringTrainer(Trainer):
             test_examples, test_dataset, output.predictions, self.args
         )
         return predictions
+    
+    def create_optimizer_and_scheduler(self, num_training_steps: int, num_cycles:int = 1, another_scheduler_flag=False):
+            if not another_scheduler_flag:
+                self.create_optimizer()
+                self.create_scheduler(num_training_steps=num_training_steps, optimizer=self.optimizer)
+            else:
+                optimizer_kwargs = {
+                        "betas": (self.args.adam_beta1, self.args.adam_beta2),
+                        "eps": self.args.adam_epsilon,
+                        "lr" : self.args.learning_rate,
+                    }
+
+                self.optimizer = AdamW(self.model.parameters(), **optimizer_kwargs)
+                self.lr_scheduler = get_cosine_with_hard_restarts_schedule_with_warmup(
+                                    self.optimizer, num_warmup_steps=self.args.warmup_steps, 
+                                    num_training_steps= num_training_steps,
+                                    num_cycles = num_cycles)

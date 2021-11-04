@@ -4,7 +4,7 @@ import time
 import pickle
 import numpy as np
 import pandas as pd
-from rank_bm25 import BM25Plus, BM25L, BM25L
+from rank_bm25 import BM25Plus
 
 from tqdm.auto import tqdm
 from contextlib import contextmanager
@@ -254,6 +254,7 @@ class SparseRetrieval:
         query_or_dataset: Union[str, Dataset],
         topk: Optional[int] = 1,
         score_ratio: Optional[float] = None,
+        pickle_path: Optional[str] = ''
     ) -> Union[Tuple[List, List], pd.DataFrame]:
 
         """
@@ -277,49 +278,56 @@ class SparseRetrieval:
         """
 
         assert self.BM25 is not None, "get_sparse_BM25() 메소드를 먼저 수행해줘야합니다."
-
-        if isinstance(query_or_dataset, str):
-            doc_scores, doc_indices = self.get_relevant_doc_BM25(
-                query_or_dataset, k=topk
-            )
-            print("[Search query]\n", query_or_dataset, "\n")
-
-            for i in range(topk):
-                print(f"Top-{i+1} passage with score {doc_scores[i]:4f}")
-                print(self.contexts[doc_indices[i]])
-
-            return (doc_scores, [self.contexts[doc_indices[i]] for i in range(topk)])
-
-        elif isinstance(query_or_dataset, Dataset):
-
-            # Retrieve한 Passage를 pd.DataFrame으로 반환합니다.
-            total = []
-            with timer("query exhaustive search"):
-                doc_scores, doc_indices = self.get_relevant_doc_bulk_BM25(
-                    query_or_dataset["question"], k=topk, score_ratio=score_ratio
-                )
-            for idx, example in enumerate(
-                tqdm(query_or_dataset, desc="BM25 retrieval: ")
-            ):
-                split_string = " [SPLIT] " if self.add_special_tokens_flag else " "
-
-                tmp = {
-                    # Query와 해당 id를 반환합니다.
-                    "question": example["question"],
-                    "id": example["id"],
-                    # Retrieve한 Passage의 id, context를 반환합니다.
-                    "context_id": doc_indices[idx],
-                    "context": split_string.join([self.contexts[pid] for pid in doc_indices[idx]])
-                }
-                if "context" in example.keys() and "answers" in example.keys():
-                    # validation 데이터를 사용하면 ground_truth context와 answer도 반환합니다.
-                    tmp["original_context"] = example["context"]
-                    tmp["answers"] = example["answers"]
-                total.append(tmp)
-
-            cqas = pd.DataFrame(total)
+        pickle_name = f"BM25_retrieve_{pickle_path}.bin"
+        if os.path.isfile(pickle_name) :
+            with open(pickle_name, "rb") as file:
+                cqas = pickle.load(file)
+            print("BM25 retrieve pickle load.")
             return cqas
+        else :
+            if isinstance(query_or_dataset, str):
+                doc_scores, doc_indices = self.get_relevant_doc_BM25(
+                    query_or_dataset, k=topk
+                )
+                print("[Search query]\n", query_or_dataset, "\n")
 
+                for i in range(topk):
+                    print(f"Top-{i+1} passage with score {doc_scores[i]:4f}")
+                    print(self.contexts[doc_indices[i]])
+
+                return (doc_scores, [self.contexts[doc_indices[i]] for i in range(topk)])
+
+            elif isinstance(query_or_dataset, Dataset):
+
+                # Retrieve한 Passage를 pd.DataFrame으로 반환합니다.
+                total = []
+                with timer("query exhaustive search"):
+                    doc_scores, doc_indices = self.get_relevant_doc_bulk_BM25(query_or_dataset, k=topk, score_ratio=score_ratio)
+                for idx, example in enumerate(
+                    tqdm(query_or_dataset, desc="BM25 retrieval: ")
+                ):
+                    split_string = " [SPLIT] " if self.add_special_tokens_flag else " "
+
+                    tmp = {
+                        # Query와 해당 id를 반환합니다.
+                        "question": example["question"],
+                        "id": example["id"],
+                        # Retrieve한 Passage의 id, context를 반환합니다.
+                        "context_id": doc_indices[idx],
+                        "context": split_string.join([self.contexts[pid] for pid in doc_indices[idx]])
+                    }
+                    if "context" in example.keys() and "answers" in example.keys():
+                        # validation 데이터를 사용하면 ground_truth context와 answer도 반환합니다.
+                        tmp["original_context"] = example["context"]
+                        tmp["answers"] = example["answers"]
+                    total.append(tmp)
+
+                cqas = pd.DataFrame(total)
+                if not pickle_path :
+                    with open(pickle_name, "wb" ) as file:
+                        pickle.dump(cqas, file)
+                return cqas
+            
     def get_relevant_doc_BM25(
         self, query: str, k: Optional[int] = 1
     ) -> Tuple[List, List]:
@@ -345,8 +353,8 @@ class SparseRetrieval:
         return doc_scores[doc_indices[:k]], doc_indices[:k]
 
     def get_relevant_doc_bulk_BM25(
-        self, queries: List, k: Optional[int] = 1, score_ratio: Optional[float] = None
-    ) -> Tuple[List, List]:
+        self, query_or_dataset: Union[str, Dataset], k: Optional[int] = 1, score_ratio: Optional[float] = 0
+        ) -> Tuple[List, List]:
 
         """
         Arguments:
@@ -358,7 +366,8 @@ class SparseRetrieval:
             vocab 에 없는 이상한 단어로 query 하는 경우 assertion 발생 (예) 뙣뙇?
         """
         print("Build BM25 score, indices")
-        tokenized_queries = [self.tokenizer(i) for i in queries]
+        query = query_or_dataset['question']
+        tokenized_queries= [self.tokenizer(i) for i in query] 
         doc_scores = []
         doc_indices = []
         for i in tqdm(tokenized_queries):
@@ -380,5 +389,15 @@ class SparseRetrieval:
             else:
                 doc_scores.append(sorted_score[:k])
                 doc_indices.append(sorted_id[:k])
-
+        
+        if 'answers' in  query_or_dataset.column_names :
+            print(f'** Calculating Recall@{k}')
+            cnt = 0
+            for i, q in enumerate(query_or_dataset['context']) :
+                for wiki_idx in list(doc_indices[i]) :
+                    if q == self.contexts[wiki_idx]:
+                        cnt += 1
+                        break
+            total_len = len(query_or_dataset['context'])
+            print(f'** Recall@{k} = {cnt / total_len: .4f}, Count:{cnt}')
         return doc_scores, doc_indices

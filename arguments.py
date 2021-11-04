@@ -36,6 +36,10 @@ class ModelArguments:
         default=False,
         metadata={"help": "Load customized roberta tokenizer"},
     )
+    k_fold : int = field(
+        default=5,
+        metadata={"help": "K for K-fold validation"},
+    )
 
 
 @dataclass
@@ -150,7 +154,18 @@ class DataTrainingArguments:
         default=False,
         metadata={"help": "add special tokens about question type"},
     )
-
+    retrieve_pickle: str = field(
+        default='',
+        metadata={"help":"put a pickle file path for load"},
+    )
+    another_scheduler_flag :bool = field(
+        default=False,
+        metadata={"help": "create another scheduler"}
+    )
+    num_cycles :int = field(
+        default=1,
+        metadata={"help": "cycles for get_cosine_schedule_with_warmup"}
+    )
 @dataclass
 class LoggingArguments:
     """

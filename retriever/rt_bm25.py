@@ -235,7 +235,7 @@ class SparseRetrieval:
         query_or_dataset: Union[str, Dataset],
         topk: Optional[int] = 1,
         score_ratio: Optional[float] = None,
-        pickle_path: Optional[str] = None
+        pickle_path: Optional[str] = ''
     ) -> Union[Tuple[List, List], pd.DataFrame]:
 
         """
@@ -304,8 +304,11 @@ class SparseRetrieval:
                     total.append(tmp)
 
                 cqas = pd.DataFrame(total)
+                if not pickle_path :
+                    with open(pickle_name, "wb" ) as file:
+                        pickle.dump(cqas, file)
                 return cqas
-
+            
     def get_relevant_doc_BM25(
         self, query: str, k: Optional[int] = 1
     ) -> Tuple[List, List]:

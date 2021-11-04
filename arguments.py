@@ -158,6 +158,14 @@ class DataTrainingArguments:
         default='',
         metadata={"help":"put a pickle file path for load"},
     )
+    another_scheduler_flag :bool = field(
+        default=False,
+        metadata={"help": "create another scheduler"}
+    )
+    num_cycles :int = field(
+        default=1,
+        metadata={"help": "cycles for get_cosine_schedule_with_warmup"}
+    )
 @dataclass
 class LoggingArguments:
     """

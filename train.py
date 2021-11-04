@@ -1,6 +1,7 @@
 import logging
 import os
 import sys
+import math
 import torch
 import pandas as pd
 
@@ -435,6 +436,9 @@ def run_mrc(
         post_process_function=post_processing_function,
         compute_metrics=compute_metrics,
     )
+    
+    total_steps = math.ceil(len(train_dataset)/training_args.per_device_train_batch_size)
+    trainer.create_optimizer_and_scheduler(total_steps, data_args.num_cycles, data_args.another_scheduler_flag)
 
     if training_args.do_train:
         if last_checkpoint is not None:

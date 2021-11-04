@@ -21,4 +21,4 @@ retriever/*.ipynb
 tokenizer/**
 ignore/
 Tuning/*
-TrainRetrieval/*
+TrainRetrievalDir/*

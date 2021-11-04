@@ -203,7 +203,7 @@ def main():
         train_data = retriever.retrieve_train_BM25(dataset=train_data, topk=3, rtt_name=data_args.rtt_dataset_name)
         datasets['train'] = train_data
         print("\n","Retrieved 이후 : \n", datasets['train'][0])
-
+ 
     print(
         type(training_args),
         type(model_args),

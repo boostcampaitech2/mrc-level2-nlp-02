@@ -282,16 +282,17 @@ def postprocess_qa_predictions(
                     all_predictions[example["id"]] = best_non_null_pred["text"]
 
         # np.float를 다시 float로 casting -> `predictions`은 JSON-serializable 가능
+        
         all_nbest_json[example["id"]] = [
             {
                 k: (
                     float(v)
                     if isinstance(v, (np.float16, np.float32, np.float64))
-                    else v
+                    else last_postprocessing(context, v, position, idxx)
                 )
                 for k, v in pred.items()
             }
-            for pred in predictions
+            for idxx, pred in enumerate(predictions)
         ]
 
     # output_dir이 있으면 모든 dicts를 저장합니다.
@@ -334,6 +335,9 @@ def postprocess_qa_predictions(
     return all_predictions
 
 def last_postprocessing(context, answer_text, position, index):
+    if len(answer_text)<2 or type(answer_text) != type(''):
+        return answer_text
+    
     before_text=''
     after_text=''
     answer_text = context[position[index][0]:position[index][1]]
@@ -354,7 +358,7 @@ def last_postprocessing(context, answer_text, position, index):
             after_text = context[position[index][1]:after_text.find(answer_text)-len(answer_text)]
     
     else:
-        after_text = context[position[index][1],:]
+        after_text = context[position[index][1]:]
         if answer_text in after_text:
             after_text = context[position[index][1]:after_text.find(answer_text)-len(answer_text)]
     
@@ -385,9 +389,6 @@ def last_postprocessing(context, answer_text, position, index):
             answer_text = answer_text
         else:
             answer_text = answer_text[:len(answer_text)-count]
-    
-    if answer_text[-1]=='(':
-        answer_text = answer_text[:-1]
     
     return answer_text
     

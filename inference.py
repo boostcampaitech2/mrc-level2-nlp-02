@@ -314,6 +314,7 @@ def run_sparse_retrieval(
         datasets["validation"],
         topk=data_args.top_k_retrieval,
         score_ratio=data_args.score_ratio,
+        pickle_path=data_args.retrieve_pickle
     )
 
     # test data 에 대해선 정답이 없으므로 id question context 로만 데이터셋이 구성됩니다.

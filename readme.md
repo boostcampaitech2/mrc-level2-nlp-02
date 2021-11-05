@@ -1,27 +1,46 @@
-# Pstage_02_KLUE
+# Pstage_02_MRC
 
-Solution for KLUE Competitions in 2nd BoostCamp AI Tech 2기 by **메타몽팀 (2조)**
+Solution for MRC Competitions in 2nd BoostCamp AI Tech 2기 by **메타몽팀 (2조)**
 
 ## Content
-
 - [Competition Abstract](#competition-abstract)
+- [Result](#result)
 - [Hardware](#hardware)
+- [Operating System](#operating-system)
 - [Archive Contents](#archive-contents)
 - [Getting Started](#getting-started)
-  - [Dependencies](#dependencies)
-  - [Install Requirements](#install-requirements)
-  - [Training](#training)
-  - [Inference](#inference)
-  - [Soft-voting Ensemble](#soft-voting-ensemble)
-- [Architecture](#architecture)
-- [Result](#result)
+  * [Dependencies](#dependencies)
+  * [Install Requirements](#install-requirements)
+- [Arguments](#arguments)
+  * [Model Arguments](#model-arguments)
+  * [DataTrainingArguments](#datatrainingarguments)
+  * [LoggingArguments](#loggingarguments)
+- [Running Command](#running-command)
+  * [Train](#train)
+  * [Reader evaluation](#reader-evaluation)
+  * [ODQA evaluation](#odqa-evaluation)
+  * [Inference prediction](#inference-prediction)
+  * [Soft-voting Ensemble](#soft-voting-ensemble)
+  * [Hard-voting Ensemble](#hard-voting-ensemble)
+- [Reference](#reference)
+
 
 ## Competition Abstract
 
-- 문장과 subject_entity, object_entity가 주어졌을 때, 해당 문장 내의 subject_entity와 object_entity 사이의 관계를 예측하는 Relation Extraction task
+- 주어지는 지문이 따로 존재하지 않을 때 사전에 구축되어 있는 대용량의 corpus에서 질문에 대답할 수 있는 문서를 찾고, 다양한 종류의 질문에 대답하는 인공지능 모델 개발
 - 데이터셋 통계:
-  - train.csv: 총 32470개
-  - test_data.csv: 총 7765개 (정답 라벨 blind = 100으로 임의 표현)
+  - Corpus : Wikipedia 약 5,7000개 문서
+  - train_data : 3,952개 (Context, Question, Answer)
+  - validation_data : 240개 (Context, Question, Answer)
+  - test_data : 600개 (Question)
+
+## Result
+
+|         |   EM   |   F1   | RANK |
+|:-------:|:------:|:------:|:----:|
+| Public  | 74.580 | 83.100 |  3   |
+| Private | 70.280 | 79.530 |  5   |
+
 
 ## Hardware
 
@@ -34,61 +53,54 @@ Solution for KLUE Competitions in 2nd BoostCamp AI Tech 2기 by **메타몽팀 (
 
 ## Archive Contents
 
-- klue-level2-nlp-02 : 구현 코드와 모델 checkpoint 및 모델 결과를 포함하는 디렉토리
+- mrc-level2-nlp-02 : 구현 코드와 모델 checkpoint 및 모델 결과를 포함하는 디렉토리
 
 ```
-klue-level2-nlp-02/
-├── best_models/
-├── results/
-├── prediction/
-│   └── all/
-├── modules/
-│   ├── preprocesor.py
-│   ├── augmentation.py
-│   ├── loss.py
-│   ├── make_rtt_csv.py
-│   ├── concat_csv.py
-│   ├── UNK_token_text_search.ipynb
-│   └── crawling_papago_rtt.ipynb
-├── dict_label_to_num.pkl
-├── dict_num_to_label.pkl
+mrc-level2-nlp-02/
+├── utils
+│   ├── crawling_papago_rtt.ipynb
+│   ├── nbest_ensemble.ipynb
+│   ├── Question type Tagging.ipynb
+│   ├── question_generation.ipynb
+│   └── use_ner.ipynb
+├── data
+│   ├── papago_ner.csv
+│   ├── question_generation.csv
+│   ├── question_tag_rtt_papago_ner.csv
+│   ├── question_tag_testset.csv
+│   ├── question_tag_trainset.csv
+│   ├── question_tag_validset.csv
+│   ├── trainset_rtt_papago.csv
+│   └── trainset_rtt_pororo.csv
+├── arguments.py
+├── custom_tokenizer.py
+├── inference.py
+├── inference_k_fold.py
+├── preprocessor.py
+├── rt_bm25.py
 ├── train.py
-├── train_mlm.py
-├── load_data.py
-├── tokenization.py
-├── model.py
-├── model_ensemble.py
-└── inference.py
+├── train_k_fold.py
+├── trainer_qa.py
+└── utils_qa.py
 ```
-
-- `best_models/` : train.py/train_mlm.py 실행 후 모델의 loss가 가장 낮은 checkpoint가 저장되는 디렉토리
-- `results/` : train.py/train_mlm.py 실행 중 모델의 checkpoint가 임시로 저장되는 디렉토리
-- `prediction/` : inference.py 실행 후 모델 예측 결과 csv가 저장되는 디렉토리
-  - `all/` : model_ensemble.py 실행 시에 args.dir=='all'인 경우 불러오는 csv 파일들이 저장되어있는 디렉토리
-- `modules/` : 데이터 전처리나 augmentation과 관련된 모듈 혹은 train시 사용되는 모듈들이 있는 디렉토리
-  - `preprocessor.py` : 데이터 전처리
-  - `augmentation.py` : 데이터 augmentation
-  - `loss.py` : custom loss
-  - `make_rtt_csv.py` : Round-trip Translation을 이용한 데이터 추가 생성
-  - `concat_csv.py` : 추가 생성 데이터 csv 파일을 concatenation (RTT or TAPT)
-  -
-- `train.py` : RE task 단일 모델 및 k-fold 모델 학습
-- `train_mlm.py` : MLM task 사전 학습
-- `load_data.py` : 데이터 클래스 정의
-- `tokenization.py` : tokenization
-- `model.py` : custom model
-- `model_ensemble.py` : 모델 결과 csv 파일들을 soft-voting ensemble
-- `inference.py` : RE task 단일 모델 및 k-fold 모델 결과 생성
+- `utils/` : 해당 디렉토리 내 ipynb 파일 실행 시 data 디렉토리에 csv 파일 생성
+- `data/` : train/inference 시 활용하는 데이터 파일
+- `inference.py` : retriever-reader inference 후 predictions.json 및 nbest_predictions.json 생성
+- `inference_k_fold.py` : k fold를 사용하여 inference하는 파일
+- `preprocessor.py` : 데이터 전처리용 코드
+- `rt_bm25.py` : bm25를 사용한 retriever
+- `train.py` : reader 모델 학습을 위한 파일
+- `train_k_fold.py` : reader 모델 학습시 k fold 적용 파일
+- `trainer_qa.py` : Question Answering Trainer를 정의하는 파일
+- `utils_qa.py` : Question Answering 후처리(post processing) 코드
 
 ## Getting Started
 
 ### Dependencies
 
 - torch==1.6.0
-- pandas==1.1.5
-- scikit-learn~=0.24.1
-- transformers ~
-- wandb==0.12.1
+- transformers==4.11.0
+- datasets==1.4.0
 
 ### Install Requirements
 
@@ -96,117 +108,97 @@ klue-level2-nlp-02/
 sh requirement_install.sh
 ```
 
-### Training
-
-#### Options-train.py
+## Arguments
+    
+### Model Arguments
 
 |      argument       | description                                                                                   | default                                      |
 | :-----------------: | :-------------------------------------------------------------------------------------------- | :------------------------------------------- |
-|      save_dir       | 모델 저장 경로 설정                                                                           | ./best_models                                |
-|         PLM         | 사용할 모델 선택(checkpoint)                                                                  | klue/bert-base                               |
-|   MLM_checkpoint    | MLM 모델 불러오기                                                                             | ./best_models/klue-roberta-large-rtt-pem-mlm |
-|     entity_flag     | typed entity marker punct 사용                                                                | False                                        |
-|       use_mlm       | MaskedLM pretrained model 사용 유무                                                           | False                                        |
-|       epochs        | train epoch 횟수 지정                                                                         | 3                                            |
-|         lr          | learning rate 지정                                                                            | 5e-5                                         |
-|  train_batch_size   | train batch size 설정                                                                         | 16                                           |
-|    warmup_steps     | warmup step 설정                                                                              | 500                                          |
-|    weigth_decay     | weight decay 설정                                                                             | 0.01                                         |
-| evaluatoin_stratgey | evaluation_strategy 설정                                                                      | steps                                        |
-|  ignore_mismatched  | pretrained model load 시, mismatched size 무시 유무                                           | False                                        |
-|      eval_flag      | validation data 사용 유무                                                                     | False                                        |
-|     eval_ratio      | evalation data size ratio 설정                                                                | 0.2                                          |
-|        seed         | random seed 설정                                                                              | 2                                            |
-|     dotenv_path     | 사용자 env 파일 경로 설정                                                                     | /opt/ml/wandb.env                            |
-|  wandb_unique_tag   | wandb tag 설정                                                                                | bert-base-high-lr                            |
-|     entity_flag     | 사용자 env 파일 경로 설정                                                                     | False                                        |
-|  preprocessing_cmb  | 데이터 전처리 방식 선택(0: 특수 문자 제거, 1: 특수 문자 치환, 2: date 보정, 3: 한글 띄워주기) | set ex: 0 1 2                                |
-|     mecab_flag      | mecab을 활용한 형태소 분리                                                                    | False                                        |
-|    add_unk_token    | unk token vocab에 저장                                                                        | False                                        |
-|       k_fold        | Stratified K Fold 사용                                                                        | 0                                            |
-|      adea_flag      | adea 사용 유무                                                                                | False                                        |
-|  augmentation_flag  | rtt augmentation dataset 사용 유무                                                            | False                                        |
-|     model_type      | 대,소분류 진행할 class 입력                                                                   | default                                      |
-|     model_name      | custom 모델 입력                                                                              | None                                         |
+|      model_name_or_path      | 사용할 모델 선택                                                                           | klue/roberta-large                                |
+|         rt_model_name       | 사용할 모델 선택                                                                 | klue/bert-base                               |
+|   config_name    | Pretrained된 model config 경로                                                                             | klue/roberta-large |
+|     tokenizer_name     | customized tokenizer 경로 선택                                                               | None                                        |
+| customized_tokenizer_flag | customized roberta tokenizer 로드하기 | False|
+| k_fold | K-fold validation의 k 선택 | 5|
 
-#### Options-train_mlm.py
+### DataTrainingArguments
 
-**train.py의 --use_pem, --model_type 제외 동일**
+|      argument       | description                                                                                   | default                                      |
+| :-----------------: | :-------------------------------------------------------------------------------------------- | :------------------------------------------- |
+|      dataset_name      | 사용할 데이터셋 이름 지정                                                                           | /opt/ml/data/train_dataset                                |
+|         overwrite_cache       |  캐시된 training과 evaluation set을 overwrite하기                                                                | False                               |
+|preprocessing_num_workers|전처리동안 사용할 prcoess 수 지정|2|
+|max_seq_length|Sequence 길이 지정|384|
+|pad_to_max_length|max_seq_length에 모든 샘플 패딩할지 결정|True|
+|doc_stride|얼마나 stride할지 결정|128|
+|max_answer_length|answer text 생성 최대 길이 설정|30|
+|eval_retrieval|원하는 retrieval 선택|sparse|
+|num_clusters|faiss 사용 시, cluster 갯수 지정|64|
+|top_k_retrieval|retrieve 시, 유사도 top k만큼의 passage 정의|50|
+|score_ratio|score ratio 정의|0|
+|train_retrieval|sparse/dense embedding을 train에 사용 유무 결정|False|
+|data_selected|context or answers or question 중, 추가할 Unknown token 설정|""|
+|rtt_dataset_name|RTT data path 설정|None|
+|preprocessing_pattern|원하는 전처리 선택|None|
+|add_special_tokens_flag|special token 추가|False|
+|add_special_tokens_query_flag|Question type에 관한 speical token 추가|False|
+|retrieve_pickle|pickle file 넣기|''|
+|another_scheduler_flag|다른 scheduler 사용|False|
+|num_cycles|cosine schedule with warmup cycle 설정|1|
 
-| argument | description                  | default |
-| :------: | :--------------------------- | :------ |
-| use_pem  | 데이터 전처리 방식 선택 유무 | False   |
+
+### LoggingArguments
+
+|     argument          | description                                                                                   | default        |
+| :---------------:     | :-------------------------------------------------------------------------------------------- | :------------- |
+|     wandb_name        | wandb에 기록될 모델의 이름                                                                            | model/roberta  |
+| dotenv_path    | wandb key값을 등록하는 파일의 경로  | ./wandb.env |
+|project_name|wandb에 기록될 project name|False |
+
+
+## Running Command
+### Train
+```
+$ python train.py --output_dir ./models --do_train --preprocessing_pattern 0 --add_special_tokens_query_flag True
+```
+
+### Reader evaluation
 
 ```
-$ python train_mlm.py --PLM klue/roberta-large --use_pem --preprocessing_cmb 0 1 2 --use_rtt
-$ python train.py --PLM klue/roberta-large --wandb_unique_tag AddLayerNorm_lr_2e5_k_fold_10 --entity_flag --preprocessing_cmb 0 1 3 --mecab_flag --model_name AddLayerNorm --lr 2e-5 --k_fold 10
+$ python train.py --output_dir ./outputs --do_eval --model_name_or_path ./models --preprocessing_pattern 0 --add_special_tokens_query_flag True
 ```
 
-### Inference
-
-#### Options-inference.py
-
-|     argument      | description                                                                                   | default        |
-| :---------------: | :-------------------------------------------------------------------------------------------- | :------------- |
-|     model_dir     | 선택할 모델 경로                                                                              | ./best_models  |
-|        PLM        | 모델 checkpoint                                                                               | klue/bert-base |
-|    entity_flag    | typed entity marker punct 사용 유무                                                           | False          |
-| preprocessing_cmb | 데이터 전처리 방식 선택(0: 특수 문자 제거, 1: 특수 문자 치환, 2: date 보정, 3: 한글 띄워주기) | set ex: 0 1 2  |
-|    mecab_flag     | Mecab을 활용해 형태소를 분리 유무                                                             | False          |
-|   add_unk_token   | unk token vocab에 저장한 tokenizer 사용 유무                                                  | False          |
-|      k_fold       | Stratified K Fold 사용                                                                        | 0              |
-|    model_type     | 대,소분류 진행 유무                                                                           | False          |
-|    model_name     | custom 모델 입력                                                                              | None           |
+### ODQA evaluation
 
 ```
-$ python inference.py --PLM klue-roberta-large --k_fold 10 --entity_flag --preprocessing_cmb 0 1 2 --mecab_flag
+$ python inference.py --output_dir ./outputs --do_eval --model_name_or_path ./models --preprocessing_pattern 0 --add_special_tokens_query_flag True --top_k_retrieval 100 --score_ratio 0.85
+```
+
+### Inference prediction
+
+```
+$ python inference.py --output_dir ./outputs --do_predict --model_name_or_path ./models --preprocessing_pattern 0 --add_special_tokens_query_flag True  --dataset_name ../data/test_dataset/ --top_k_retrieval 100 --score_ratio 0.85
 ```
 
 ### Soft-voting Ensemble
 
-단일 모델(혹은 k-fold 모델)의 결과 csv 파일들에서 probs열을 soft-voting 하여 최종 ensemble 결과 csv를 생성합니다.
+단일 모델의 결과 nbest_predictions.json 파일들에서 probability 기반 soft-voting 하여 최종 ensemble 결과 json을 생성합니다.
 
-#### Options-model_ensemble.py
+### Hard-voting Ensemble
 
-| argument | description             | default |
-| :------: | :---------------------- | :------ |
-|   dir    | 앙상블할 모델 경로 선택 | all     |
+단일 모델의 결과 predictions.json 파일들에서 빈도 기반 hard-voting 하여 최종 ensemble 결과 json을 생성합니다.
 
-```
-$ python model_ensemble.py --dir all
-```
+> utils/nbest_ensemble.ipynb
 
-## Architecture
 
-1. Model
-
-   1. Model 1
-
-      ![스크린샷 2021-10-08 오전 10.59.06.png](./assets/model1.png)
-
-   2. Model 2
-
-      ![스크린샷 2021-10-08 오전 11.00.00.png](./assets/model2.png)
-
-   3. Model 3
-
-      ![스크린샷 2021-10-08 오전 11.00.27.png](./assets/model3.png)
-
-   4. Model 4
-
-      ![스크린샷 2021-10-08 오전 11.00.48.png](./assets/model4.png)
-
-   5. Model 5
-
-      ![스크린샷 2021-10-08 오전 11.00.48.png](./assets/model5.png)
-
-1. Model Ensemble
-
-   ![스크린샷 2021-10-08 오전 11.02.36.png](./assets/ensemble.png)
-
-## Result
-
-|         | micro_f1 | AUPRC  | RANK |
-| :-----: | :------: | :----: | :--: |
-| Public  |  73.860  | 81.085 |  11  |
-| Private |  73.069  | 82.295 |  7   |
+## Reference
+1. Dense Passage Retrieval for Open-Domain Question Answering 
+    > https://arxiv.org/abs/2004.04906
+2. Passage Re-Ranking With BERT 
+    > https://arxiv.org/pdf/1901.04085.pdf
+3. Latent Retrieval for Weekly Supervised Open Domain Question Answering 
+    > https://arxiv.org/pdf/1906.00300.pdf
+4. Cheap and Good? : Simple and Effective Data Augmentation for Low Source Machine Reading 
+    > https://arxiv.org/abs/2106.04134
+5. How NLP Can Improve Question Answering 
+    > https://core.ac.uk/download/pdf/31832115.pdf

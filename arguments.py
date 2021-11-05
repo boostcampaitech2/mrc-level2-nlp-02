@@ -153,7 +153,7 @@ class LoggingArguments:
 
     wandb_name: Optional[str] = field(
         default="model/roberta",
-        metadata={"help": "The name of the dataset to use."},
+        metadata={"help": "wandb name"},
     )
 
     dotenv_path: Optional[str] = field(
@@ -163,5 +163,5 @@ class LoggingArguments:
 
     project_name: Optional[str] = field(
         default="mrc_project_1",
-        metadata={"help": "The name of the dataset to use."},
+        metadata={"help": "project name"},
     )

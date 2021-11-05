@@ -36,9 +36,6 @@ from utils_qa import postprocess_qa_predictions, check_no_error
 from trainer_qa import QuestionAnsweringTrainer
 
 from retriever.rt_bm25 import SparseRetrieval
-from retriever.rt_ES_sparse import run_elastic_sparse_retrieval
-from retriever.elastic_search import run_elastic_dense_retrieval
-
 from arguments import (
     ModelArguments,
     DataTrainingArguments,
@@ -48,8 +45,6 @@ from arguments import (
 import wandb
 from dotenv import load_dotenv
 import os
-
-from retriever.rt_model import BertEncoder, klueRobertaEncoder
 
 
 from preprocessor import Preprocessor
@@ -78,8 +73,8 @@ def main():
     
     wandb.init(
         entity="klue-level2-nlp-02",
-        project="mrc_project_Rerank",
-        name=log_args.wandb_name + "_eval" if training_args.do_eval==True else "_inference",
+        project=log_args.project_name,
+        name=log_args.wandb_name + "_eval" if training_args.do_eval==True else log_args.wandb_name + "_inference",
         group=model_args.model_name_or_path,
     )
     wandb.config.update(training_args)
@@ -145,149 +140,16 @@ def main():
         config=config,
     )
     # True일 경우 : run passage retrieval
-    if data_args.eval_retrieval == "sparse":
-        datasets = run_sparse_retrieval(
-            tokenizer.tokenize,
-            datasets,
-            training_args,
-            data_args,
-        )
-    elif data_args.eval_retrieval == "elastic_sparse":
-        datasets = run_elastic_sparse_retrieval(
-            datasets,
-            training_args,
-            data_args,
-        )
-    elif data_args.eval_retrieval == "elastic_dense":
-        datasets = run_elastic_dense_retrieval(
-            datasets,
-            training_args,
-            data_args,
-        )
-        
-    if data_args.re_rank == True:
-        if 'roberta' in model_args.rt_model_name:
-            rt_tokenizer = AutoTokenizer.from_pretrained(model_args.rt_model_name)
-            p_encoder = klueRobertaEncoder(model_args.rt_model_name)
-            q_encoder = klueRobertaEncoder(model_args.rt_model_name)
-        else:
-            rt_tokenizer = AutoTokenizer.from_pretrained(model_args.rt_model_name)
-            p_encoder = BertEncoder.from_pretrained(model_args.rt_model_name)
-            q_encoder = BertEncoder.from_pretrained(model_args.rt_model_name)
-        p_encoder, q_encoder = load_rerank_model(p_encoder, q_encoder)
-
-
-        datasets = re_rank_use_model(training_args, model_args.rt_model_name, datasets, rt_tokenizer, p_encoder, q_encoder, data_args.re_rank_top_k)
+    datasets = run_sparse_retrieval(
+        tokenizer.tokenize,
+        datasets,
+        training_args,
+        data_args,
+    )
 
     # eval or predict mrc model
     if training_args.do_eval or training_args.do_predict:
         run_mrc(data_args, training_args, model_args, datasets, tokenizer, model)
-
-def re_rank_use_model(training_args, model_name, datasets:DatasetDict, tokenizer, p_encoder, q_encoder, re_rank_top_k = 10):
-    df = datasets['validation'].to_pandas()
-    
-    queries = df['question'].tolist()
-    contexts = df['context'].tolist()
-
-    print(f"query의 개수 : {len(queries)}")
-    print(f"top_k_passage 개수 : {len(contexts)}")
-
-    top_k_passage = []
-
-    for passages in contexts:
-        p_list = passages.split("▦")
-        top_k_passage.append(p_list)
-    print(f"query 당 passage 개수 : {len(top_k_passage[0])}")
-
-    rerank_passage = []
-
-    p_encoder.to('cuda')
-    q_encoder.to('cuda')
-
-    for idx in tqdm(range(len(queries))):
-        q_seqs = tokenizer(
-            queries[idx],
-            padding="max_length",
-            truncation=True,
-            return_tensors="pt",
-            return_token_type_ids=False if 'roberta' in model_name else True,
-        ).to('cuda')  # (1, 512)
-
-        p_seqs = tokenizer(
-            top_k_passage[idx],
-            padding="max_length",
-            truncation=True,
-            return_tensors="pt",
-            return_token_type_ids=False if 'roberta' in model_name else True,
-        ).to('cuda')  # (top_k, 512)      
-
-        with torch.no_grad():
-            q_encoder.eval()
-            p_encoder.eval()
-
-            q_outputs = q_encoder(**q_seqs).to('cpu')
-            p_outputs = p_encoder(**p_seqs).to('cpu')
-
-            sim_score = torch.matmul(q_outputs, p_outputs.transpose(0,1)) # (1, top_k)
-            indices = torch.argsort(sim_score, dim=1, descending=True).squeeze(0)[:re_rank_top_k]
-        temp = []
-        for i in indices:
-            temp.append(top_k_passage[idx][i])
-        rerank_passage.append(" ".join(temp))
-
-    print(f"re-rank passage 개수 :{len(rerank_passage)}")
-    df['context'] = rerank_passage
-    
-    if training_args.do_predict:
-        f = Features(
-            {
-                "context": Value(dtype="string", id=None),
-                "id": Value(dtype="string", id=None),
-                "question": Value(dtype="string", id=None),
-            }
-        )
-
-    # train data 에 대해선 정답이 존재하므로 id question context answer 로 데이터셋이 구성됩니다.
-    elif training_args.do_eval:
-        f = Features(
-            {
-                "answers": Sequence(
-                    feature={
-                        "text": Value(dtype="string", id=None),
-                        "answer_start": Value(dtype="int32", id=None),
-                    },
-                    length=-1,
-                    id=None,
-                ),
-                "context": Value(dtype="string", id=None),
-                "id": Value(dtype="string", id=None),
-                "question": Value(dtype="string", id=None),
-            }
-        )
-    return DatasetDict({"validation": Dataset.from_pandas(df, features=f)})
-
-def load_rerank_model(p_encoder, q_encoder):
-    file_list = glob('/opt/ml/mrc-level2-nlp-02/encoders/*')
-
-
-    for idx, file_name in enumerate(file_list):
-        print(f"{idx} : {file_name.split('/')[-1]}")
-    
-    select_num = int(input("모델을 선택하세요 : "))
-
-    full_path = file_list[select_num]
-    p_encoder_path = os.path.join(full_path, "passage.pt")
-    q_encoder_path = os.path.join(full_path, "query.pt")
-
-    assert os.path.isfile(p_encoder_path) or os.path.isfile(q_encoder_path), "rt_train을 실행해서 model parameter를 저장해야 합니다."
-
-    p_encoder.load_state_dict(torch.load(p_encoder_path))
-    q_encoder.load_state_dict(torch.load(q_encoder_path))
-
-    print("finish load model state dict !!!")
-
-    return p_encoder, q_encoder
-
 
 def run_sparse_retrieval(
     tokenize_fn: Callable[[str], List[str]],

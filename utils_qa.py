@@ -45,7 +45,6 @@ logger = logging.getLogger(__name__)
 def set_seed(seed: int = 42):
     """
     seed 고정하는 함수 (random, numpy, torch)
-
     Args:
         seed (:obj:`int`): The seed to set.
     """
@@ -74,7 +73,6 @@ def postprocess_qa_predictions(
     """
     Post-processes : qa model의 prediction 값을 후처리하는 함수
     모델은 start logit과 end logit을 반환하기 때문에, 이를 기반으로 original text로 변경하는 후처리가 필요함
-
     Args:
         examples: 전처리 되지 않은 데이터셋 (see the main script for more information).
         features: 전처리가 진행된 데이터셋 (see the main script for more information).
@@ -249,17 +247,14 @@ def postprocess_qa_predictions(
         # best prediction을 선택합니다.
         if not version_2_with_negative:
             # 조사 제거 진행
-            # ii=0
-            # while predictions[ii]['text']==".":
-            #     ii+=1
-            #     if n_best_size-1 == ii:
-            #         break
-            # if len(predictions[ii]["text"])>=2:
-            #     text = last_postprocessing(context, predictions[ii]['text'], position, ii)
-            #     all_predictions[example["id"]] = text
-            # else:
-            #     all_predictions[example["id"]] = predictions[ii]["text"]
-            all_predictions[example["id"]] = predictions[0]["text"]
+            ii=0
+            while predictions[ii]['text']==".":
+                ii+=1
+            if len(predictions[ii]["text"])>=2:
+                text = last_postprocessing(context, predictions[ii]['text'], position, ii)
+                all_predictions[example["id"]] = text
+            else:
+                all_predictions[example["id"]] = predictions[ii]["text"]
         else:
             # else case : 먼저 비어 있지 않은 최상의 예측을 찾아야 합니다
             i = 0
@@ -278,12 +273,11 @@ def postprocess_qa_predictions(
             if score_diff > null_score_diff_threshold:
                 all_predictions[example["id"]] = ""
             else:
-                # if len(best_non_null_pred["text"])>=2:
-                #     text = last_postprocessing(context, best_non_null_pred["text"], position, i)
-                #     all_predictions[example["id"]] = text
-                # else: 
-                #     all_predictions[example["id"]] = best_non_null_pred["text"]
-                all_predictions[example["id"]] = best_non_null_pred["text"]
+                if len(best_non_null_pred["text"])>=2:
+                    text = last_postprocessing(context, best_non_null_pred["text"], position, i)
+                    all_predictions[example["id"]] = text
+                else: 
+                    all_predictions[example["id"]] = best_non_null_pred["text"]
 
         # np.float를 다시 float로 casting -> `predictions`은 JSON-serializable 가능
         
@@ -292,8 +286,7 @@ def postprocess_qa_predictions(
                 k: (
                     float(v)
                     if isinstance(v, (np.float16, np.float32, np.float64))
-                    # else last_postprocessing(context, v, position, idxx)
-                    else v
+                    else last_postprocessing(context, v, position, idxx)
                 )
                 for k, v in pred.items()
             }

@@ -35,7 +35,7 @@ from transformers import (
 from utils_qa import postprocess_qa_predictions, check_no_error
 from trainer_qa import QuestionAnsweringTrainer
 
-from retriever.rt_bm25 import SparseRetrieval
+from rt_bm25 import SparseRetrieval
 from arguments import (
     ModelArguments,
     DataTrainingArguments,

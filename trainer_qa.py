@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """
-Question-Answering task와 관련된 'Trainer'의 subclass 코드 입니다.
+    Question-Answering task와 관련된 'Trainer'의 subclass 코드 입니다.
 """
 
 from transformers import (
@@ -23,8 +23,6 @@ from transformers import (
     AdamW,
     get_cosine_with_hard_restarts_schedule_with_warmup
 )
-from transformers.trainer_utils import PredictionOutput
-
 
 if is_datasets_available():
     import datasets

@@ -10,7 +10,6 @@ from glob import glob
 import torch
 
 import numpy as np
-from tqdm.auto import tqdm
 
 from datasets import (
     load_metric,
@@ -56,13 +55,12 @@ def main():
     # 가능한 arguments 들은 ./arguments.py 나 transformer package 안의 src/transformers/training_args.py 에서 확인 가능합니다.
     # --help flag 를 실행시켜서 확인할 수 도 있습니다.
     
-    # dataclass를 통해 변수를 만들고 HfArgumentParser를 통해 합쳐서 사용
+    # dataclass를 통해 변수를 만들고 HfArgumentParser를 통해 합쳐서 사용합니다.
     parser = HfArgumentParser(
         (ModelArguments, DataTrainingArguments, TrainingArguments, LoggingArguments)
     )
     model_args, data_args, training_args, log_args = parser.parse_args_into_dataclasses()
     
-    #trainingarguments
     training_args.per_device_eval_batch_size = 8
     
     #wandb
@@ -77,9 +75,6 @@ def main():
         group=model_args.model_name_or_path,
     )
     wandb.config.update(training_args)
-
-
-    # training_args.do_train = True
 
     print(f"model is from {model_args.model_name_or_path}")
     print(f"data is from {data_args.dataset_name}")
@@ -99,40 +94,38 @@ def main():
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
     
-    #데이터셋을 불러옵니다.
+    # 데이터셋을 불러옵니다.
     datasets = load_from_disk(data_args.dataset_name)
-
-    #cache 파일을 정리합니다.
+    print(datasets)
+    # cache 파일을 정리합니다.
     datasets.cleanup_cache_files()
-    
-    if training_args.do_predict==True and data_args.add_special_tokens_query_flag:
-        q_type_data = pd.read_csv("./csv/question_tag_testset.csv",index_col=0)
+
+    # Question Tag를 붙입니다.(ex. 나는 언제 밥을 먹을까?[WHEN])
+    if data_args.add_special_tokens_query_flag:
+        if training_args.do_predict:
+            q_type_data = pd.read_csv("./csv/question_tag_testset.csv",index_col=0)
+        elif training_args.do_eval:
+            q_type_data = pd.read_csv("./csv/question_tag_validset.csv",index_col=0)
         train_data = datasets['validation'].to_pandas()
         train_data['question'] = train_data['question']+' '+q_type_data['Q_tag']
         datasets['validation'] = datasets['validation'].from_pandas(train_data)
         print(datasets['validation']['question'][0])
-        print("======================================= predict Tag complete============================")
+        print("=======================================Tag complete============================")
         
-    if training_args.do_eval==True and data_args.preprocessing_pattern != None:
-        if data_args.add_special_tokens_query_flag:
-            q_type_data = pd.read_csv("./csv/question_tag_validset.csv",index_col=0)
-            
-            train_data = datasets['validation'].to_pandas()
-            train_data['question']=train_data['question']+' '+q_type_data['Q_tag']
-            datasets['validation'] = datasets['validation'].from_pandas(train_data)
-            print(datasets['validation']['question'][0])
-            print("======================================= Tag complete============================")
-
+    if data_args.preprocessing_pattern != None and training_args.do_eval:
         datasets = Preprocessor.preprocessing(data = datasets, pt_num=data_args.preprocessing_pattern)
     print(datasets)
     
     model_path = model_args.model_name_or_path
 
+    # 이전에 K-fold training을 진행했다면 0~K 이름의 directory가 존재합니다.
+    # tokenizer와 config설정을 위해 0번째 directory path를 지정합니다.
     try : 
         if '0' in os.listdir(model_args.model_name_or_path) and '1' in os.listdir(model_args.model_name_or_path) :
             model_path = os.path.join(model_args.model_name_or_path, '0')
     except :
         model_path = model_args.model_name_or_path
+
     # AutoConfig를 이용하여 pretrained model 과 tokenizer를 불러옵니다.
     # argument로 원하는 모델 이름을 설정하면 옵션을 바꿀 수 있습니다.
     config = AutoConfig.from_pretrained(model_path)
@@ -146,6 +139,8 @@ def main():
         from_tf=bool(".ckpt" in model_args.model_name_or_path),
         config=config,
     )
+    
+    # 이전에 K-fold training을 진행했다면 0~K 이름의 directory가 존재합니다.
     try :
         if '0' in os.listdir(model_args.model_name_or_path) and '1' in os.listdir(model_args.model_name_or_path) :
             model_path_list = os.listdir(model_args.model_name_or_path)
@@ -153,6 +148,7 @@ def main():
             model = AutoModelForQuestionAnswering.from_pretrained(
                 sub_path, config=config
                 )
+            # Model weight average를 위해 for loop를 돌며 weight를 평균 내어줍니다.
             model_sd = model.state_dict()
             for sub_path in model_path_list[1:] :
                 sub_path = os.path.join(model_args.model_name_or_path, sub_path)
@@ -176,7 +172,6 @@ def main():
         data_args,
     )
  
-
     if training_args.do_eval or training_args.do_predict:
         run_mrc(data_args, training_args, model_args, datasets, tokenizer, model)
 
@@ -210,7 +205,7 @@ def run_sparse_retrieval(
     
     # test data 에 대해선 정답이 없으므로 id question context 로만 데이터셋이 구성됩니다.
     if training_args.do_predict:
-        f = Features( # Features로 데이터 셋 형식화?
+        f = Features(
             {
                 "context": Value(dtype="string", id=None),
                 "id": Value(dtype="string", id=None),
@@ -220,7 +215,7 @@ def run_sparse_retrieval(
 
     # train data 에 대해선 정답이 존재하므로 id question context answer 로 데이터셋이 구성됩니다.
     elif training_args.do_eval:
-        f = Features( # Features로 형식화?
+        f = Features(
             {
                 "answers": Sequence(
                     feature={
@@ -247,7 +242,9 @@ def run_mrc(
     tokenizer,
     model,
 ) -> NoReturn:
-
+    """
+        Retriever를 통해 생성된 datasets를 통해 Reader model을 실행
+    """
     # eval 혹은 prediction에서만 사용함
     column_names = datasets["validation"].column_names
 
@@ -266,8 +263,10 @@ def run_mrc(
 
     # Validation preprocessing / 전처리를 진행합니다.
     def prepare_validation_features(examples):
-        # truncation과 padding(length가 짧을때만)을 통해 toknization을 진행하며, stride를 이용하여 overflow를 유지합니다.
-        # 각 example들은 이전의 context와 조금씩 겹치게됩니다.
+        """
+            truncation과 padding(length가 짧을때만)을 통해 toknization을 진행하며, stride를 이용하여 overflow를 유지합니다.
+            각 example들은 이전의 context와 조금씩 겹치게됩니다.
+        """
         tokenized_examples = tokenizer(
             examples[question_column_name if pad_on_right else context_column_name],
             examples[context_column_name if pad_on_right else question_column_name],
@@ -276,7 +275,7 @@ def run_mrc(
             stride=data_args.doc_stride,
             return_overflowing_tokens=True,
             return_offsets_mapping=True,
-            return_token_type_ids=False, # roberta모델을 사용할 경우 False, bert를 사용할 경우 True로 표기해야합니다.
+            return_token_type_ids=False,  # roberta모델을 사용할 경우 False, bert를 사용할 경우 True로 표기해야합니다.
             padding="max_length" if data_args.pad_to_max_length else False,
         )
 
@@ -328,7 +327,9 @@ def run_mrc(
         predictions: Tuple[np.ndarray, np.ndarray],
         training_args: TrainingArguments,
     ) -> EvalPrediction:
-        # Post-processing: start logits과 end logits을 original context의 정답과 match시킵니다.
+        """
+        start logits과 end logits을 original context의 정답과 match시킵니다.
+        """
         predictions = postprocess_qa_predictions(
             examples=examples,
             features=features,

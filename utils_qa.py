@@ -15,7 +15,7 @@
 """
 Pre-processing
 Post-processing utilities for question answering.
-"""
+""" 
 import collections
 import json
 import logging
@@ -34,7 +34,6 @@ from konlpy.tag import Mecab
 
 from datasets import DatasetDict
 from arguments import (
-    ModelArguments,
     DataTrainingArguments,
 )
 
@@ -71,34 +70,34 @@ def postprocess_qa_predictions(
     is_world_process_zero: bool = True,
 ):
     """
-    Post-processes : qa model의 prediction 값을 후처리하는 함수
-    모델은 start logit과 end logit을 반환하기 때문에, 이를 기반으로 original text로 변경하는 후처리가 필요함
-    Args:
-        examples: 전처리 되지 않은 데이터셋 (see the main script for more information).
-        features: 전처리가 진행된 데이터셋 (see the main script for more information).
-        predictions (:obj:`Tuple[np.ndarray, np.ndarray]`):
-            모델의 예측값 :start logits과 the end logits을 나타내는 two arrays              첫번째 차원은 :obj:`features`의 element와 갯수가 맞아야함.
-        version_2_with_negative (:obj:`bool`, `optional`, defaults to :obj:`False`):
-            정답이 없는 데이터셋이 포함되어있는지 여부를 나타냄
-        n_best_size (:obj:`int`, `optional`, defaults to 20):
-            답변을 찾을 때 생성할 n-best prediction 총 개수
-        max_answer_length (:obj:`int`, `optional`, defaults to 30):
-            생성할 수 있는 답변의 최대 길이
-        null_score_diff_threshold (:obj:`float`, `optional`, defaults to 0):
-            null 답변을 선택하는 데 사용되는 threshold
-            : if the best answer has a score that is less than the score of
-            the null answer minus this threshold, the null answer is selected for this example (note that the score of
-            the null answer for an example giving several features is the minimum of the scores for the null answer on
-            each feature: all features must be aligned on the fact they `want` to predict a null answer).
-            Only useful when :obj:`version_2_with_negative` is :obj:`True`.
-        output_dir (:obj:`str`, `optional`):
-            아래의 값이 저장되는 경로
-            dictionary : predictions, n_best predictions (with their scores and logits) if:obj:`version_2_with_negative=True`,
-            dictionary : the scores differences between best and null answers
-        prefix (:obj:`str`, `optional`):
-            dictionary에 `prefix`가 포함되어 저장됨
-        is_world_process_zero (:obj:`bool`, `optional`, defaults to :obj:`True`):
-            이 프로세스가 main process인지 여부(logging/save를 수행해야 하는지 여부를 결정하는 데 사용됨)
+        Post-processes : qa model의 prediction 값을 후처리하는 함수
+        모델은 start logit과 end logit을 반환하기 때문에, 이를 기반으로 original text로 변경하는 후처리가 필요함
+        Args:
+            examples: 전처리 되지 않은 데이터셋 (see the main script for more information).
+            features: 전처리가 진행된 데이터셋 (see the main script for more information).
+            predictions (:obj:`Tuple[np.ndarray, np.ndarray]`):
+                모델의 예측값 :start logits과 the end logits을 나타내는 two arrays              첫번째 차원은 :obj:`features`의 element와 갯수가 맞아야함.
+            version_2_with_negative (:obj:`bool`, `optional`, defaults to :obj:`False`):
+                정답이 없는 데이터셋이 포함되어있는지 여부를 나타냄
+            n_best_size (:obj:`int`, `optional`, defaults to 20):
+                답변을 찾을 때 생성할 n-best prediction 총 개수
+            max_answer_length (:obj:`int`, `optional`, defaults to 30):
+                생성할 수 있는 답변의 최대 길이
+            null_score_diff_threshold (:obj:`float`, `optional`, defaults to 0):
+                null 답변을 선택하는 데 사용되는 threshold
+                : if the best answer has a score that is less than the score of
+                the null answer minus this threshold, the null answer is selected for this example (note that the score of
+                the null answer for an example giving several features is the minimum of the scores for the null answer on
+                each feature: all features must be aligned on the fact they `want` to predict a null answer).
+                Only useful when :obj:`version_2_with_negative` is :obj:`True`.
+            output_dir (:obj:`str`, `optional`):
+                아래의 값이 저장되는 경로
+                dictionary : predictions, n_best predictions (with their scores and logits) if:obj:`version_2_with_negative=True`,
+                dictionary : the scores differences between best and null answers
+            prefix (:obj:`str`, `optional`):
+                dictionary에 `prefix`가 포함되어 저장됨
+            is_world_process_zero (:obj:`bool`, `optional`, defaults to :obj:`True`):
+                이 프로세스가 main process인지 여부(logging/save를 수행해야 하는지 여부를 결정하는 데 사용됨)
     """
     assert (
         len(predictions) == 2
@@ -219,7 +218,7 @@ def postprocess_qa_predictions(
 
         # offset을 사용하여 original context에서 answer text를 수집합니다.
         context = example["context"]
-        # position을 저장하는 list
+        # position을 저장하는 list (size: n_best_size)
         position=[]
         for pred in predictions:
             offsets = pred.pop("offsets")
@@ -246,17 +245,18 @@ def postprocess_qa_predictions(
 
         # best prediction을 선택합니다.
         if not version_2_with_negative:
-            # 조사 제거 진행
+            # 조사 제거 진행합니다.
             ii=0
+            # answer text 중, "."이 있다면 수행하지 않습니다.
             while predictions[ii]['text']==".":
                 ii+=1
             if len(predictions[ii]["text"])>=2:
-                text = last_postprocessing(context, predictions[ii]['text'], position, ii)
+                text = answer_postprocessing(context, predictions[ii]['text'], position, ii)
                 all_predictions[example["id"]] = text
             else:
                 all_predictions[example["id"]] = predictions[ii]["text"]
         else:
-            # else case : 먼저 비어 있지 않은 최상의 예측을 찾아야 합니다
+            # else case : 먼저 비어 있지 않은 최상의 예측을 찾아야 합니다.
             i = 0
             while predictions[i]["text"] == "" or predictions[i]["text"]==".":
                 i += 1
@@ -269,24 +269,25 @@ def postprocess_qa_predictions(
                 - best_non_null_pred["start_logit"]
                 - best_non_null_pred["end_logit"]
             )
-            scores_diff_json[example["id"]] = float(score_diff)  # JSON-serializable 가능
+            scores_diff_json[example["id"]] = float(score_diff)  # JSON-serializable 가능합니다.
             if score_diff > null_score_diff_threshold:
                 all_predictions[example["id"]] = ""
             else:
+                # 조사 제거 시행합니다.
                 if len(best_non_null_pred["text"])>=2:
-                    text = last_postprocessing(context, best_non_null_pred["text"], position, i)
+                    text = answer_postprocessing(context, best_non_null_pred["text"], position, i)
                     all_predictions[example["id"]] = text
                 else: 
                     all_predictions[example["id"]] = best_non_null_pred["text"]
 
-        # np.float를 다시 float로 casting -> `predictions`은 JSON-serializable 가능
-        
+        # np.float를 다시 float로 casting -> `predictions`은 JSON-serializable 가능합니다.
         all_nbest_json[example["id"]] = [
             {
                 k: (
                     float(v)
                     if isinstance(v, (np.float16, np.float32, np.float64))
-                    else last_postprocessing(context, v, position, idxx)
+                    # n_best_size만큼의 answer text들의 조사 제거합니다.
+                    else answer_postprocessing(context, v, position, idxx)
                 )
                 for k, v in pred.items()
             }
@@ -332,7 +333,17 @@ def postprocess_qa_predictions(
 
     return all_predictions
 
-def last_postprocessing(context, answer_text, position, index):
+
+def answer_postprocessing(context, answer_text, position, index):
+    """ 
+        answer post-processing을 수행하는 함수
+
+        1. answer text가 포함된 context 추출
+        2. mecab을 통해, context 품사 태깅
+        3. context에 포함된 answer text의 품사 태깅 비교 후, 조사 포함된 품사가 있다면 제거
+    """
+
+    # answer_text 길이가 1이하이거나 string type이 아닌 경우 수행하지 않습니다.
     if len(answer_text)<2 or type(answer_text) != type(''):
         return answer_text
     
@@ -340,6 +351,7 @@ def last_postprocessing(context, answer_text, position, index):
     after_text=''
     answer_text = context[position[index][0]:position[index][1]]
     
+    # answer가 존재하는 context 추출합니다.
     if len(context[:position[index][0]])>=20:
         before_text = context[position[index][0]-20:position[index][0]]
         if answer_text in before_text:
@@ -360,12 +372,14 @@ def last_postprocessing(context, answer_text, position, index):
         if answer_text in after_text:
             after_text = context[position[index][1]:after_text.find(answer_text)-len(answer_text)]
     
+    # answer text가 포함된 context 완성시킵니다.
     tmp_text = before_text + answer_text + after_text
     an = ''.join(answer_text.split())
     t=''
     
     mecab = Mecab()
     
+    # context에 대해서 mecab을 통한 품사 태깅합니다.
     pos_tag = mecab.pos(tmp_text)
     for iz in range(len(pos_tag)):
         t+=pos_tag[iz][0]
@@ -373,6 +387,7 @@ def last_postprocessing(context, answer_text, position, index):
             idx=iz
             break
     
+    # 조사가 포함된 품사가 있다면 해당되는 단어를 제거합니다.
     if pos_tag[idx][1] in {"JX", "JKB", "JKO", "JKS", "ETM", "VCP", "JC","VCP+EC"}:
         count=0
         for idx_char, char in enumerate(pos_tag[idx][0]):
@@ -399,8 +414,11 @@ def check_no_error(
     datasets: DatasetDict,
     tokenizer,
 ) -> Tuple[Any, int]:
+    """
+        Fast tokenizer or output 경로 확인하는 함수
+    """
 
-    # last checkpoint 찾기.
+    # last checkpoint 찾습니다.
     last_checkpoint = None
     if (
         os.path.isdir(training_args.output_dir)

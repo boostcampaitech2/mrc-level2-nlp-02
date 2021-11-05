@@ -5,9 +5,8 @@ import math
 import torch
 import pandas as pd
 
-from typing import List, Callable, NoReturn, NewType, Any
+from typing import NoReturn
 from datasets import load_metric, load_from_disk, Dataset, DatasetDict
-#from datasets import Value, Features, Sequence
 
 from transformers import AutoConfig, AutoModelForQuestionAnswering
 from transformers import (
@@ -21,7 +20,6 @@ from transformers import (
 from utils_qa import postprocess_qa_predictions, check_no_error
 from trainer_qa import QuestionAnsweringTrainer
 from rt_bm25 import SparseRetrieval
-from augmentation import SpanAugmentation
 
 from arguments import (
     ModelArguments,
@@ -40,12 +38,14 @@ def main():
     # 가능한 arguments 들은 ./arguments.py 나 transformer package 안의 src/transformers/training_args.py 에서 확인 가능합니다.
     # --help flag 를 실행시켜서 확인할 수 도 있습니다.
 
+    # dataclass를 통해 변수를 만들고 HfArgumentParser를 통해 합쳐서 사용합니다.
     parser = HfArgumentParser(
         (ModelArguments, DataTrainingArguments, LoggingArguments, TrainingArguments)
     )
 
     model_args, data_args, log_args, training_args = parser.parse_args_into_dataclasses()
     
+    #wandb
     load_dotenv(dotenv_path=log_args.dotenv_path)
     WANDB_AUTH_KEY = os.getenv("WANDB_AUTH_KEY")
     wandb.login(key=WANDB_AUTH_KEY)
@@ -88,42 +88,36 @@ def main():
     config = AutoConfig.from_pretrained(
         model_args.model_name_or_path)
     print(config)
-    #     # 'use_fast' argument를 True로 설정할 경우 rust로 구현된 tokenizer를 사용할 수 있습니다.
-    #     # False로 설정할 경우 python으로 구현된 tokenizer를 사용할 수 있으며,
-    #     # rust version이 비교적 속도가 빠릅니다.
-    
+
+    # 'use_fast' argument를 True로 설정할 경우 rust로 구현된 tokenizer를 사용할 수 있습니다.
+    # False로 설정할 경우 python으로 구현된 tokenizer를 사용할 수 있으며,
+    # rust version이 비교적 속도가 빠릅니다.
     tokenizer = load_pretrained_tokenizer(
             pretrained_model_name_or_path = model_args.model_name_or_path,
             data_selected = data_args.data_selected,
             datasets=datasets,
             add_special_tokens_flag = data_args.add_special_tokens_flag or data_args.add_special_tokens_query_flag,
             use_fast=True)
-    
+        
+    # 추가된 vocab size를 확인합니다.
     print("\n","num of added vocab in tokenizer : ", len(tokenizer.vocab) - config.vocab_size)
     
-    # Question tag 붙이기
+    # Question tag를 붙입니다.(ex. 나는 언제 밥을 먹을까?[WHEN])
     if data_args.add_special_tokens_query_flag:
+        # do_train 시, train에 관한 데이터셋에 Question tag 붙입니다.
         if training_args.do_train:
             q_type_data = pd.read_csv("./csv/question_tag_trainset.csv",index_col=0)
-            
-            train_data = datasets['train'].to_pandas()
-            train_data['question']=train_data['question']+' '+q_type_data['Q_tag']
-            datasets['train'] = datasets['train'].from_pandas(train_data)
-            
-            print(" "+"*"*50,"\n","*"*50,"\n","*"*50)
-            print(" ***** question tag 끝!: ", datasets['train']['question'][0],"******")
-            print(" "+"*"*50,"\n","*"*50,"\n","*"*50,"\n\n")
-        
+            data_type = "train"
+        # do_eval 시, validation에 관한 데이터셋에 Question tag 붙입니다.
         elif training_args.do_eval:
             q_type_data = pd.read_csv("./csv/question_tag_validset.csv",index_col=0)
-            
-            train_data = datasets['validation'].to_pandas()
-            train_data['question']=train_data['question']+' '+q_type_data['Q_tag']
-            datasets['validation'] = datasets['validation'].from_pandas(train_data)
-            
-            print(" "+"*"*50,"\n","*"*50,"\n","*"*50)
-            print(" ***** question tag 끝!: ", datasets['validation']['question'][0],"******")
-            print(" "+"*"*50,"\n","*"*50,"\n","*"*50,"\n\n")
+            data_type = "validation"
+        train_data = datasets[data_type].to_pandas()
+        train_data['question']=train_data['question']+' '+q_type_data['Q_tag']
+        datasets[data_type] = datasets[data_type].from_pandas(train_data)
+        print(" "+"*"*50,"\n","*"*50,"\n","*"*50)
+        print(" ***** question tag 끝!: ", datasets[data_type]['question'][0],"******")
+        print(" "+"*"*50,"\n","*"*50,"\n","*"*50,"\n\n")
 
     # rtt 데이터셋이 존재할 경우 기존 데이터셋과 합칩니다.
     if data_args.rtt_dataset_name != None and training_args.do_train:
@@ -133,7 +127,7 @@ def main():
         
         if data_args.add_special_tokens_query_flag:
             q_data = pd.read_csv("./csv/question_tag_rtt_papago_ner.csv",index_col=0)
-            rtt_data['question']=rtt_data['question']+q_data['Q_tag']
+            rtt_data['question']=rtt_data['question']+' '+q_data['Q_tag']
             print(" ***** rtt question tag 끝!: ", rtt_data.loc[0]['question'],"******")
         rtt_data['answers'] = rtt_data.answers.map(eval)
 
@@ -146,25 +140,13 @@ def main():
         print(" "+"*"*50,"\n","*"*50,"\n","*"*50,"\n\n")
     print(datasets)
 
-    # Span Augmentation을 적용합니다.
-    if data_args.pretrain_span_augmentation == True :
-        print('Span Augmentation을 이용해서 데이터를 증가')
-        print('증가하기 이전에 데이터 수 : %d' %len(datasets['train']))
-        span_augmentation = SpanAugmentation()
-        train_data = datasets['train']
-        train_data = span_augmentation(train_data)
-
-        datasets['train'] = train_data
-        print('증가하고 난 이후의 데이터 수 : %d' %len(datasets['train']))
-    print(datasets)
-
     model = AutoModelForQuestionAnswering.from_pretrained(
         model_args.model_name_or_path,
         from_tf=bool(".ckpt" in model_args.model_name_or_path), # Load the model weights from a TensorFlow checkpoint save file
         config=config,
     )
 
-    # model resize
+    # vocab size가 추가되었을 때를 위해 model resize를 진행합니다.
     model.resize_token_embeddings(len(tokenizer))
     assert model.vocab_size == len(tokenizer), "embedding size and vocab size is not equal"
     print("\n",f"embedding size and vocab size is equal \n [model vocab_size] {model.vocab_size} || [tokenizer vocab_size] {len(tokenizer)}" )
@@ -172,13 +154,16 @@ def main():
     #cache 파일을 정리합니다.
     datasets.cleanup_cache_files()
         
-    # #기본 전처리를 진행합니다.
     print(data_args.preprocessing_pattern)
     print("\n","전처리 전: \n",datasets['train'][0])
+    
+    # 원하는 전처리를 수행합니다.
     if data_args.preprocessing_pattern != None:
         datasets = Preprocessor.preprocessing(data = datasets, pt_num = data_args.preprocessing_pattern)
         print("\n","전처리 후: \n",datasets['train'][0])
     
+    
+    # train_retrieval argument가 true면 train dataset의 question과 BM25을 이용해서 구한 wikipedia data과 dataset의 context을 합칩니다.
     if data_args.train_retrieval == True :
         print('Retrieve Using Train Data')
         retriever = SparseRetrieval(tokenize_fn = tokenizer.tokenize,
@@ -188,10 +173,9 @@ def main():
             add_special_tokens_flag=data_args.add_special_tokens_flag
         )
 
-        # 수정 부분
         retriever.get_sparse_BM25()
         train_data = datasets['train'] 
-        train_data = retriever.retrieve_train_BM25(dataset=train_data, topk=3, rtt_name=data_args.rtt_dataset_name)
+        train_data = retriever.retrieve_train_BM25(dataset=train_data, topk=3, rtt_name=data_args.rtt_dataset_name) 
         datasets['train'] = train_data
         print("\n","Retrieved 이후 : \n", datasets['train'][0])
  
@@ -215,8 +199,9 @@ def run_mrc(
     tokenizer,
     model,
 ) -> NoReturn:
-
-    # dataset을 전처리합니다.
+    """
+        Dataset을 전처리한 뒤 Reader model을 실행
+    """
     # training과 evaluation에서 사용되는 전처리는 아주 조금 다른 형태를 가집니다.
     if training_args.do_train:
         column_names = datasets["train"].column_names
@@ -238,8 +223,10 @@ def run_mrc(
 
     # Train preprocessing / 전처리를 진행합니다.
     def prepare_train_features(examples):
-        # truncation과 padding(length가 짧을때만)을 통해 toknization을 진행하며, stride를 이용하여 overflow를 유지합니다.
-        # 각 example들은 이전의 context와 조금씩 겹치게됩니다.
+        """
+            truncation과 padding(length가 짧을때만)을 통해 toknization을 진행하며, stride를 이용하여 overflow를 유지합니다.
+            각 example들은 이전의 context와 조금씩 겹치게됩니다.
+        """
         tokenized_examples = tokenizer(
             examples[question_column_name if pad_on_right else context_column_name],
             examples[context_column_name if pad_on_right else question_column_name],
@@ -332,8 +319,10 @@ def run_mrc(
 
     # Validation preprocessing
     def prepare_validation_features(examples):
-        # truncation과 padding(length가 짧을때만)을 통해 toknization을 진행하며, stride를 이용하여 overflow를 유지합니다.
-        # 각 example들은 이전의 context와 조금씩 겹치게됩니다.
+        """
+            truncation과 padding(length가 짧을때만)을 통해 toknization을 진행하며, stride를 이용하여 overflow를 유지합니다.
+            각 example들은 이전의 context와 조금씩 겹치게됩니다.
+        """
         tokenized_examples = tokenizer(
             examples[question_column_name if pad_on_right else context_column_name],
             examples[context_column_name if pad_on_right else question_column_name],
@@ -392,9 +381,11 @@ def run_mrc(
         tokenizer, pad_to_multiple_of=8 if training_args.fp16 else None
     )
 
-    # Post-processing:
+    # Post-processing을 수행하는 함수
     def post_processing_function(examples, features, predictions, training_args):
-        # Post-processing: start logits과 end logits을 original context의 정답과 match시킵니다.
+        """
+            start logits과 end logits을 original context의 정답과 match시킵니다.
+        """
         predictions = postprocess_qa_predictions(
             examples=examples, # 전처리 되지 않은 dataset
             features=features, # 전처리 된 dataset
@@ -425,7 +416,7 @@ def run_mrc(
     def compute_metrics(p: EvalPrediction):
         return metric.compute(predictions=p.predictions, references=p.label_ids)
 
-    # Trainer 초기화
+    # Trainer 초기화을 수행합니다.
     trainer = QuestionAnsweringTrainer( 
         model=model,
         args=training_args,
@@ -444,8 +435,6 @@ def run_mrc(
         
         if last_checkpoint is not None:
             checkpoint = last_checkpoint
-        #elif os.path.isdir(model_args.model_name_or_path):
-        #    checkpoint = model_args.model_name_or_path
         else:
             checkpoint = None
         train_result = trainer.train(resume_from_checkpoint=checkpoint)
@@ -466,12 +455,12 @@ def run_mrc(
                 logger.info(f"  {key} = {value}")
                 writer.write(f"{key} = {value}\n")
 
-        # State 저장
+        # State 저장합니다.
         trainer.state.save_to_json(
             os.path.join(training_args.output_dir, "trainer_state.json")
         )
 
-    # Evaluation
+    # Evaluation을 진행합니다.
     if training_args.do_eval:
         logger.info("*** Evaluate ***")
         metrics = trainer.evaluate()

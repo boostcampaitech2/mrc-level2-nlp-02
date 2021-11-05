@@ -23,7 +23,7 @@ class ModelArguments:
     config_name: Optional[str] = field(
         default="klue/roberta-large",
         metadata={
-            "help": "Pretrained config name or path if not the same as model_name"
+            "help": "Pretrained config name or path if not the s ame as model_name"
         },
     )
     tokenizer_name: Optional[str] = field(
@@ -109,9 +109,6 @@ class DataTrainingArguments:
             "help": "Define the score ratio."
         },
     )
-    use_faiss: bool = field(
-        default=False, metadata={"help": "Whether to build with faiss"}
-    )
     train_retrieval: bool = field(
         default=False,
         metadata={"help": "Whether to train sparse/dense embedding (prepare for retrieval)."},
@@ -131,24 +128,6 @@ class DataTrainingArguments:
     add_special_tokens_flag:bool = field(
         default=False,
         metadata={"help": "add special tokens"},
-    )
-    pretrain_span_augmentation : bool = field(
-        default=False,
-        metadata={"help": "pretrain data using span augmentation"},
-    )
-    num_neg: int = field(
-        default=0, metadata={"help": "Define how many negative sampling dataset"},
-    )
-    reconfig: bool = field(
-        default=False,
-        metadata={"help": "Elastic search re-config flag"},
-    )
-    re_rank: bool = field(
-        default=False,
-        metadata={"help": "re-rank top-k passage"},
-    )
-    re_rank_top_k : int = field(
-        default=10, metadata={"help": "Define how many re-rank passage"},
     )
     add_special_tokens_query_flag:bool = field(
         default=False,

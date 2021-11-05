@@ -7,9 +7,12 @@ class Preprocessor :
                 "1" : re.compile("(\\n)+|(\\\\n)+|(\\xa0)|(\\u3000)|( )+"),
                 "2" : re.compile("(\\\\n)+|(\\n)+|[^a-zA-Z0-9가-힣ㄱ-ㅎㅏ-ㅣぁ-ゔァ-ヴー々〆〤一-龥()?!∧≪≫『』\'<>〈〉:「」＜＞<>》《・\"-“”\s\.\‘’%,]"),
                 "3" : re.compile(r'[\u0000-\u001f\u1fff-\u3000\ud7a4-\uf8ff\U000186a0-\U00030d40]')}
-     
+                
     @classmethod
     def preprocessing(self, data, pt_num): #pt_num 123_0 or 123_1
+        """
+            Wikipedia Data 혹은 Train, Validation dataset을 타입에 알맞게 전처리
+        """
         # dataset
         if type(data) == DatasetDict:
             # data = data.map(self.reconstruct(pt_num=pt_num))        
@@ -34,6 +37,9 @@ class Preprocessor :
 
 
     def reconstruct(self, dataset, pt_num) :
+        """
+            pt_num을 인자로 받아서 dataset을 전처리하고 그에 맞게 answer start point를 재조정
+        """
         assert isinstance(dataset, dict)
         context = dataset['context']
         answer = dataset['answers'] 
@@ -55,6 +61,9 @@ class Preprocessor :
         return dataset
 
     def sen_preprocess(self, context, pt_num) :
+        """
+            pt_num을 인자로 받아서 문장 단위로 전처리를 진행
+        """
         for num in pt_num:
             context = self.pattern_dict[num].sub(" ",context) 
             context = re.sub('\s+', ' ', context)   

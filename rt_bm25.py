@@ -44,24 +44,24 @@ class SparseRetrieval:
     ) -> NoReturn:
 
         """
-        Arguments:
-            tokenize_fn:
-                기본 text를 tokenize해주는 함수입니다.
-                아래와 같은 함수들을 사용할 수 있습니다.
-                - lambda x: x.split(' ')
-                - Huggingface Tokenizer
-                - konlpy.tag의 Mecab
+            Arguments:
+                tokenize_fn:
+                    기본 text를 tokenize해주는 함수입니다.
+                    아래와 같은 함수들을 사용할 수 있습니다.
+                    - lambda x: x.split(' ')
+                    - Huggingface Tokenizer
+                    - konlpy.tag의 Mecab
 
-            data_path:
-                데이터가 보관되어 있는 경로입니다.
+                data_path:
+                    데이터가 보관되어 있는 경로입니다.
 
-            context_path:
-                Passage들이 묶여있는 파일명입니다.
+                context_path:
+                    Passage들이 묶여있는 파일명입니다.
 
-            data_path/context_path가 존재해야합니다.
+                data_path/context_path가 존재해야합니다.
 
-        Summary:
-            Passage 파일을 불러오고 TfidfVectorizer를 선언하는 기능을 합니다.
+            Summary:
+                Passage 파일을 불러오고 TfidfVectorizer를 선언하는 기능을 합니다.
         """
 
         self.data_path = data_path
@@ -90,7 +90,7 @@ class SparseRetrieval:
             max_features=50000,
         )
 
-        self.p_embedding = None  # get_sparse_embedding()로 생성합니다
+        self.p_embedding = None  # get_sparse_embedding()로 생성합니다.
         self.indexer = None  # build_faiss()로 생성합니다.
 
         ## BM25 추가용 ##
@@ -100,10 +100,8 @@ class SparseRetrieval:
     def get_sparse_BM25(self) -> NoReturn:
 
         """
-        Summary:
-            Passage Embedding을 만들고
-            TFIDF와 Embedding을 pickle로 저장합니다.
-            만약 미리 저장된 파일이 있으면 저장된 pickle을 불러옵니다.
+            Passage Embedding을 만들고 TFIDF와 Embedding을 pickle로 저장
+            만약 미리 저장된 파일이 있으면 저장된 pickle을 호출
         """
 
         # Pickle을 저장 "0123"
@@ -131,19 +129,22 @@ class SparseRetrieval:
     def retrieve_train_BM25(
         self, dataset: Union[str, Dataset], topk: Optional[int] = 1, rtt_name : Optional[str] = None
     ) -> Union[Tuple[List, List], pd.DataFrame]:
+        """ 
+            Dataset의 Question을 BM25를 이용해서 유사한 Wikipedia Data를 불러와서 기존 Train Data의 context와 합치고 answer start point를 재조정
+        """
         assert self.BM25 is not None and isinstance(dataset, Dataset)
 
-        sep_flag = 1 if self.add_special_tokens_flag == True else 0
-        rtt_flag = 1 if rtt_name != None else 0
+        sep_flag = 1 if self.add_special_tokens_flag == True else 0 # 서로 다른 Passage를 구분하는 special token을 넣을 지 결정하는 flag
+        rtt_flag = 1 if rtt_name != None else 0 # rtt data를 사용할 지 결정하는 flag
         json_name = f"train_retrieval_{self.pt_num}_{sep_flag}_{rtt_flag}_topk{topk}.json"
         json_path = os.path.join('./json', json_name)
 
-        if os.path.isfile(json_path):
+        if os.path.isfile(json_path): # json file이 이미 존재하면 이를 불러와서 Dataframe를 만들고 반환합니다.
             print("Load Saved Retrieval Json Data.")
             with open(json_path , "r", encoding="utf-8") as f:
                 json_data = json.load(f)
-            cqas = pd.DataFrame(json_data)
-        else :
+            cqas = pd.DataFrame(json_data) 
+        else : # json file이 존재 하지 않는다면 BM25를 이용해서 train dataset을 재구성
             total = []
             print('Make Retrieval Pandas Data')
             with timer("query exhaustive search"):
@@ -153,9 +154,10 @@ class SparseRetrieval:
                 tqdm(dataset, desc="BM25 retrieval: ")
             ):
 
-                gap_size = 9 if self.add_special_tokens_flag == True else 1
-
-                doc_start = 0
+                gap_size = 9 if self.add_special_tokens_flag == True else 1 # 문단 사이사이에 ' [SPLIT] ' 이 들어가기 때문에 길이 9가 추가되어야 합니다.
+ 
+                # 원래 문단 앞에 passage가 추가 되어야 하면 answer start point를 재조정합니다.
+                doc_start = 0 
                 if doc_rank[idx] > 0 :
                     for i in range(doc_rank[idx]) :
                         doc_id = doc_indices[idx][i]
@@ -207,7 +209,9 @@ class SparseRetrieval:
     def get_relevant_train_bulk_BM25(
         self, datasets: Dataset, k: Optional[int] = 1, 
     ) -> Tuple[List, List]:
-
+        """
+            BM25를 활용해서 datasets의 question을 이용해 Wikipedia passage들을 가져오고 context와 합치는 함수
+        """
         print("Build BM25 score, indices")
 
         data_size = len(datasets)
@@ -236,11 +240,11 @@ class SparseRetrieval:
                 selected_indices.append(sorted_id[j])
                 j += 1
 
-            if org_id not in selected_indices :
+            if org_id not in selected_indices : # top k 안에 train context가 포함 되지 않는다면 마지막에 context를 넣어줍니다.
                 doc_ranks.append(j)
                 selected_scores.append(0)
                 selected_indices.append(org_id)
-            else :
+            else : # top k 안에 train context가 포함되면 몇 번째인지를 파악합니다.
                 org_rank = selected_indices.index(org_id)
                 doc_ranks.append(org_rank)
 
@@ -258,23 +262,23 @@ class SparseRetrieval:
     ) -> Union[Tuple[List, List], pd.DataFrame]:
 
         """
-        Arguments:
-            query_or_dataset (Union[str, Dataset]):
-                str이나 Dataset으로 이루어진 Query를 받습니다.
-                str 형태인 하나의 query만 받으면 `get_relevant_doc`을 통해 유사도를 구합니다.
-                Dataset 형태는 query를 포함한 HF.Dataset을 받습니다.
-                이 경우 `get_relevant_doc_bulk`를 통해 유사도를 구합니다.
-            topk (Optional[int], optional): Defaults to 1.
-                상위 몇 개의 passage를 사용할 것인지 지정합니다.
+            Arguments:
+                query_or_dataset (Union[str, Dataset]):
+                    str이나 Dataset으로 이루어진 Query를 받습니다.
+                    str 형태인 하나의 query만 받으면 `get_relevant_doc`을 통해 유사도를 구합니다.
+                    Dataset 형태는 query를 포함한 HF.Dataset을 받습니다.
+                    이 경우 `get_relevant_doc_bulk`를 통해 유사도를 구합니다.
+                topk (Optional[int], optional): Defaults to 1.
+                    상위 몇 개의 passage를 사용할 것인지 지정합니다.
 
-        Returns:
-            1개의 Query를 받는 경우  -> Tuple(List, List)
-            다수의 Query를 받는 경우 -> pd.DataFrame: [description]
+            Returns:
+                1개의 Query를 받는 경우  -> Tuple(List, List)
+                다수의 Query를 받는 경우 -> pd.DataFrame: [description]
 
-        Note:
-            다수의 Query를 받는 경우,
-                Ground Truth가 있는 Query (train/valid) -> 기존 Ground Truth Passage를 같이 반환합니다.
-                Ground Truth가 없는 Query (test) -> Retrieval한 Passage만 반환합니다.
+            Note:
+                다수의 Query를 받는 경우,
+                    Ground Truth가 있는 Query (train/valid) -> 기존 Ground Truth Passage를 같이 반환합니다.
+                    Ground Truth가 없는 Query (test) -> Retrieval한 Passage만 반환합니다.
         """
 
         assert self.BM25 is not None, "get_sparse_BM25() 메소드를 먼저 수행해줘야합니다."
@@ -333,13 +337,13 @@ class SparseRetrieval:
     ) -> Tuple[List, List]:
 
         """
-        Arguments:
-            query (str):
-                하나의 Query를 받습니다.
-            k (Optional[int]): 1
-                상위 몇 개의 Passage를 반환할지 정합니다.
-        Note:
-            vocab 에 없는 이상한 단어로 query 하는 경우 assertion 발생 (예) 뙣뙇?
+            Arguments:
+                query (str):
+                    하나의 Query를 받습니다.
+                k (Optional[int]): 1
+                    상위 몇 개의 Passage를 반환할지 정합니다.
+            Note:
+                vocab 에 없는 이상한 단어로 query 하는 경우 assertion 발생 (예) 뙣뙇?
         """
 
         tokenized_query = self.tokenizer(query)
@@ -348,7 +352,7 @@ class SparseRetrieval:
         # 자동으로 passage embedding과 query vector간의 계산 완료!
         doc_scores = self.BM25.get_scores(tokenized_query)
 
-        # score 높은순으로 index 정렬
+        # score 높은순으로 index 정렬합니다.
         doc_indices = np.argsort(-doc_scores)
         return doc_scores[doc_indices[:k]], doc_indices[:k]
 
@@ -357,13 +361,13 @@ class SparseRetrieval:
         ) -> Tuple[List, List]:
 
         """
-        Arguments:
-            queries (List):
-                하나의 Query를 받습니다.
-            k (Optional[int]): 1
-                상위 몇 개의 Passage를 반환할지 정합니다.
-        Note:
-            vocab 에 없는 이상한 단어로 query 하는 경우 assertion 발생 (예) 뙣뙇?
+            Arguments:
+                queries (List):
+                    하나의 Query를 받습니다.
+                k (Optional[int]): 1
+                    상위 몇 개의 Passage를 반환할지 정합니다.
+            Note:
+                vocab 에 없는 이상한 단어로 query 하는 경우 assertion 발생 (예) 뙣뙇?
         """
         print("Build BM25 score, indices")
         query = query_or_dataset['question']
@@ -376,7 +380,7 @@ class SparseRetrieval:
             sorted_id = np.argsort(scores)[::-1]
             boundary = []
 
-            ## 해당 query의 가장 높은 score(sorted_score[0])의 x score_ratio까지의 점수만 받는다.
+            ## 해당 query의 가장 높은 score(sorted_score[0])의 x score_ratio까지의 context만 바.
             for z in sorted_score:
                 if z >= sorted_score[0] * score_ratio:
                     boundary.append(True)
@@ -390,6 +394,7 @@ class SparseRetrieval:
                 doc_scores.append(sorted_score[:k])
                 doc_indices.append(sorted_id[:k])
         
+        # Validation시 recall@K를 출력하게 합니다.
         if 'answers' in  query_or_dataset.column_names :
             print(f'** Calculating Recall@{k}')
             cnt = 0

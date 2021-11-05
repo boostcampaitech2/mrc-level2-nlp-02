@@ -19,5 +19,3 @@ retriever/encoders/**
 retriever/*.ipynb
 tokenizer/**
 ignore/
-Tuning/*
-TrainRetrievalDir/*

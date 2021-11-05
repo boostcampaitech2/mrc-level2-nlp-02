@@ -206,3 +206,96 @@ class RobertaQALSTM(RobertaPreTrainedModel):
             hidden_states=outputs.hidden_states,
             attentions=outputs.attentions,
         )
+    
+class RobertaQAConv(RobertaPreTrainedModel):
+    """[summary]
+    Roberta encoder 결과 뒤에 conv1d layer 쌓기
+    Args:
+        hidden_dim [int] :
+            conv1d hidden dimension
+    """
+    def __init__(self, model_name, config, hidden_dim = None):
+        super(RobertaQAConv, self).__init__(config)
+        self.config = config
+        self.num_labels = config.num_labels
+        
+        self.roberta = RobertaModel.from_pretrained(model_name, config = config, add_pooling_layer=False)
+        
+        self.conv1  = nn.Conv1d(config.hidden_size, 1024, kernel_size=1)
+        self.conv3  = nn.Conv1d(config.hidden_size, 1024, kernel_size=3, padding=1)
+        self.conv5  = nn.Conv1d(config.hidden_size, 1024, kernel_size=5, padding=2)
+        self.dropout = nn.Dropout(0.3)
+        self.qa_outputs = nn.Linear(1024 * 3, config.num_labels, bias=True)
+
+    def forward(
+        self,
+        input_ids=None,
+        attention_mask=None,
+        token_type_ids=None,
+        position_ids=None,
+        head_mask=None,
+        inputs_embeds=None,
+        start_positions=None,
+        end_positions=None,
+        output_attentions=None,
+        output_hidden_states=None,
+        return_dict=None,
+    ):
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+
+        outputs = self.roberta(
+            input_ids,
+            attention_mask=attention_mask,
+            token_type_ids=token_type_ids,
+            position_ids=position_ids,
+            head_mask=head_mask,
+            inputs_embeds=inputs_embeds,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
+        )
+        sequence_output = outputs[0]
+
+        conv_input = sequence_output.transpose(1, 2) # B * hidden_size * max_seq_length
+        conv1_output = F.relu(self.conv1(conv_input)) # B * num_conv_filter * max_seq_legth
+        conv3_output = F.relu(self.conv3(conv_input)) # B * num_conv_filter * max_seq_legth
+        conv5_output = F.relu(self.conv5(conv_input)) # B * num_conv_filter * max_seq_legth
+        concat_output = torch.cat((conv1_output, conv3_output, conv5_output), dim=1) # B * num_conv_filter x 3 * max_seq_legth
+
+        concat_output = concat_output.transpose(1, 2) # Dense Layer에 입력을 위해 Transpose (B * max_seq_legth * num_conv_filter x 3)
+        concat_output = self.dropout(concat_output) # dropout 통과
+        
+        logits = self.qa_outputs(concat_output) # Classifier Layer를 통해 최종 Logit을 얻음. (B * max_seq_legth * 2)        
+        start_logits, end_logits = logits.split(1, dim=-1)
+        start_logits = start_logits.squeeze(-1)
+        end_logits = end_logits.squeeze(-1)
+
+
+        total_loss = None
+        if start_positions is not None and end_positions is not None:
+            # If we are on multi-GPU, split add a dimension
+            if len(start_positions.size()) > 1:
+                start_positions = start_positions.squeeze(-1)
+            if len(end_positions.size()) > 1:
+                end_positions = end_positions.squeeze(-1)
+            # sometimes the start/end positions are outside our model inputs, we ignore these terms
+            ignored_index = start_logits.size(1)
+            start_positions = start_positions.clamp(0, ignored_index)
+            end_positions = end_positions.clamp(0, ignored_index)
+
+            loss_fct = CrossEntropyLoss(ignore_index=ignored_index)
+            start_loss = loss_fct(start_logits, start_positions)
+            end_loss = loss_fct(end_logits, end_positions)
+            total_loss = (start_loss + end_loss) / 2
+
+        if not return_dict:
+            output = (start_logits, end_logits) + outputs[2:]
+            return ((total_loss,) + output) if total_loss is not None else output
+        
+        return QuestionAnsweringModelOutput(
+            loss=total_loss,
+            start_logits=start_logits,
+            end_logits=end_logits,
+            hidden_states=outputs.hidden_states,
+            attentions=outputs.attentions,
+        )
